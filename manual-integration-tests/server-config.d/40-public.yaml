@@ -1,0 +1,17 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# Public registries, for the few tests that read from the real internet.
+# Nothing here is written to - the server kind permits reads only - and
+# every test that uses one names a single pinned artifact so a run stays
+# small.
+
+servers:
+  # One repository named for the server: a source and an enumerator named
+  # `pypi-org`, reading https://pypi.org/ and its files on
+  # files.pythonhosted.org, with no credentials.  No test walks the
+  # enumerator; the whole index is large.
+  pypi-org:
+    kind: public-pypi.org
+
+  npmjs:
+    kind: npmjs

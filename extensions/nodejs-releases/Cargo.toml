@@ -1,0 +1,22 @@
+[package]
+name = "nodejs-releases"
+version = "0.1.0"
+edition = "2024"
+description = "artifact-copy WASM source extension listing NodeJS releases from nodejs.org/dist."
+publish = false
+
+# Built on its own, for wasm32-wasip1, and never as part of the tool.
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+guest-kit = { path = "../guest-kit" }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

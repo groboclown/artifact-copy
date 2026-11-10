@@ -1,0 +1,22 @@
+# The protocol at npm/{name}, told more by the artifact listing.
+source:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: npm
+    max-listing-rows: {{yaml values.max-listing-rows}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}
+target:
+  kind: npm
+  host-path: {{yaml (concat "npm/" repository.name)}}
+enumerator:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: npm
+    last-download: {{yaml values.last-download}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}

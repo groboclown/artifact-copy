@@ -1,0 +1,16 @@
+{
+  "name": "@am-example/echo",
+  "version": "1.0.0",
+  "description": "Minimal package for local artifact server tests",
+  "main": "index.js",
+  "files": [
+    "index.js"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "left-pad": "^1.3.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

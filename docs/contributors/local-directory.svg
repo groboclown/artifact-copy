@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="470" viewBox="0 0 900 470" font-family="sans-serif" font-size="13">
+  <title>How a local directory is answered as though it were a server</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#333"/>
+    </marker>
+  </defs>
+
+  <rect width="900" height="470" fill="#ffffff"/>
+
+  <g fill="#f6f8fa" stroke="#333" stroke-width="1.2">
+    <rect x="250" y="20" width="400" height="60" rx="6"/>
+    <rect x="250" y="120" width="400" height="60" rx="6"/>
+    <rect x="250" y="220" width="400" height="60" rx="6"/>
+    <rect x="250" y="390" width="400" height="60" rx="6"/>
+  </g>
+
+  <g fill="#fffbe6" stroke="#333" stroke-width="1.2" stroke-dasharray="5 3">
+    <rect x="40" y="310" width="250" height="50" rx="6"/>
+    <rect x="325" y="310" width="250" height="50" rx="6"/>
+    <rect x="610" y="310" width="250" height="50" rx="6"/>
+  </g>
+
+  <g fill="#111" text-anchor="middle">
+    <text x="450" y="45" font-weight="bold">repo::local_dir</text>
+    <text x="450" y="65" font-size="11">source, target, enumerator; generic only</text>
+
+    <text x="450" y="145" font-weight="bold">ext::HostedExt</text>
+    <text x="450" y="165" font-size="11">confines to the repository, caches, verifies in flight</text>
+
+    <text x="450" y="245" font-weight="bold">net::emulate::LocalClient</text>
+    <text x="450" y="265" font-size="11">an HttpClient for a file:// host; options: symlinks</text>
+
+    <text x="165" y="332">plain path</text>
+    <text x="165" y="350" font-size="11">GET, HEAD, PUT (create once)</text>
+
+    <text x="450" y="332">?api=generic-list</text>
+    <text x="450" y="350" font-size="11">emulate::generic</text>
+
+    <text x="735" y="332">(later) maven, npm, pypi</text>
+    <text x="735" y="350" font-size="11">enabled through host options</text>
+
+    <text x="450" y="415" font-weight="bold">net::emulate::fs::Root</text>
+    <text x="450" y="435" font-size="11">the only std::fs caller: confinement, symlink mode, write-once</text>
+  </g>
+
+  <g stroke="#333" stroke-width="1.4" fill="none" marker-end="url(#arrow)">
+    <line x1="450" y1="80" x2="450" y2="118"/>
+    <line x1="450" y1="180" x2="450" y2="218"/>
+    <line x1="400" y1="280" x2="165" y2="308"/>
+    <line x1="450" y1="280" x2="450" y2="308"/>
+    <line x1="500" y1="280" x2="735" y2="308"/>
+    <line x1="165" y1="360" x2="400" y2="388"/>
+    <line x1="450" y1="360" x2="450" y2="388"/>
+  </g>
+
+  <g fill="#555" font-size="11">
+    <text x="460" y="104">Req through ExtHost</text>
+    <text x="460" y="204">Req through HttpClient</text>
+  </g>
+</svg>

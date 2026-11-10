@@ -1,0 +1,107 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# The locally running Artifact Keeper from `setup/artifact-keeper`.  Add
+# this directory with `--config` alongside a base configuration that
+# supplies `setup` to start using it.
+#
+# Everything here has to agree with `setup/artifact-keeper/configure.sh`,
+# which owns the repository and account names.  The passwords are read
+# straight out of the generated `setup/artifact-keeper/.env`.
+#
+# Note on loading the .env files:
+# The configuration can either use a `config-relative-path` or a
+# `working-dir-path`.  Normally, people expect systems to load the
+# `.env` file in the current directory, so `working-dir-path` ends up being a natural
+# way to reference this.  However, in this case, the `.env` has a location
+# that's a sibling to this directory, so we keep it relative to this
+# configuration file.
+#
+# Each repository is named `ak-local-{repo}`.  Every one enumerates through
+# the `artifact-keeper` enumerator.
+
+servers:
+  ak-local:
+    kind: artifact-keeper
+    url: http://localhost:8083/
+    insecure-transport: true
+    # Plain http, and that is not an oversight: `insecure-transport` says so.
+    # The test cluster has no certificate, so there is nothing to verify;
+    # `tls-verify` is left alone rather than set to false, because turning
+    # verification off on an https url is a different and much worse thing
+    # to copy into a real configuration by accident.
+
+    # The publishing account, for reads and writes alike: a server has one
+    # credential, and the tests write into the same repositories they read.
+    authentication:
+      kind: basic
+      username:
+        kind: text
+        value: am-publisher
+      password:
+        kind: property-file
+        config-relative-path: ../setup/artifact-keeper/.env
+        key: PUBLISH_PASSWORD
+
+    repositories:
+      # `npm-a` authenticated, beside the anonymous entry below.
+      ak-local-npm-auth-a:
+        name: npm-a
+        kind: npm
+        access: read
+      ak-local-npm-b:
+        name: npm-b
+        kind: npm
+      ak-local-npm-c:
+        name: npm-c
+        kind: npm
+      ak-local-pypi-a:
+        name: pypi-a
+        kind: pypi
+      ak-local-pypi-b:
+        name: pypi-b
+        kind: pypi
+      ak-local-pypi-c:
+        name: pypi-c
+        kind: pypi
+      ak-local-maven-a:
+        name: maven-a
+        kind: maven
+      ak-local-maven-b:
+        name: maven-b
+        kind: maven
+      ak-local-maven-c:
+        name: maven-c
+        kind: maven
+      ak-local-generic-a:
+        name: generic-a
+        kind: generic
+      ak-local-generic-b:
+        name: generic-b
+        kind: generic
+      ak-local-generic-c:
+        name: generic-c
+        kind: generic
+        # Versioned paths, for the NodeJS copy in `213`:
+        # `nodejs/24.1.0/node-v24.1.0-linux-x64.tar.gz`.
+        values:
+          mapping: name-version-file
+
+# Anonymous access, in the low-level form.  `configure.sh` grants anonymous
+# read of each format's "a" repository.
+hosts:
+  ak-local-anonymous:
+    url: http://localhost:8083/
+    insecure-transport: true
+
+sources:
+  ak-local-npm-a:
+    host: ak-local-anonymous
+    kind: npm
+    host-path: npm/npm-a
+
+# Writes authenticate, through the host the `ak-local` server generates.
+targets:
+  ak-local-npm-a:
+    host: ak-local
+    kind: npm
+    host-path: npm/npm-a

@@ -1,0 +1,24 @@
+# Raw files under a sub-directory.  A repository named "/" is the whole
+# directory, so it takes no host-path.
+source:
+  kind: local-directory
+{{#unless (eq repository.name "/")}}
+  host-path: {{yaml repository.name}}
+{{/unless}}
+  options:
+    mapping: {{yaml values.mapping}}
+target:
+  kind: local-directory
+{{#unless (eq repository.name "/")}}
+  host-path: {{yaml repository.name}}
+{{/unless}}
+  options:
+    mapping: {{yaml values.mapping}}
+    overwrite-guard: {{yaml values.overwrite-guard}}
+enumerator:
+  kind: local-directory
+{{#unless (eq repository.name "/")}}
+  host-path: {{yaml repository.name}}
+{{/unless}}
+  options:
+    mapping: {{yaml values.mapping}}

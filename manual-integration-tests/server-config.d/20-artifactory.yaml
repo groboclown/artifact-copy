@@ -1,0 +1,130 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# The locally running Artifactory OSS from `setup/artifactory`.  Add this
+# directory with `--config` alongside a base configuration that supplies
+# `setup` to start using it.
+#
+# Everything here has to agree with `setup/artifactory/configure.sh`,
+# which owns the repository and account names.  The passwords are read
+# straight out of the generated `setup/artifactory/.env`.
+#
+# Note on loading the .env files:
+# The configuration can either use a `config-relative-path` or a
+# `working-dir-path`.  Normally, people expect systems to load the
+# `.env` file in the current directory, so `working-dir-path` ends up being a natural
+# way to reference this.  However, in this case, the `.env` has a location
+# that's a sibling to this directory, so we keep it relative to this
+# configuration file.
+
+servers:
+  artifactory-local:
+    # OSS: no sorted AQL, so no enumerator, and a guarded target, since OSS
+    # as admin overwrites a path with different bytes and answers 201.
+    kind: artifactory-oss
+
+    # The url ends at `/artifactory/`, not at the server root, and that is
+    # load-bearing: a repository's `host-path` joins onto it.  The JFrog
+    # Platform router on 8082 serves the UI and several other services
+    # beside it.
+    url: http://localhost:8082/artifactory/
+    insecure-transport: true
+    # Plain http, and that is not an oversight: `insecure-transport` says so.
+    # The test cluster has no certificate, so there is nothing to verify;
+    # `tls-verify` is left alone rather than set to false, because turning
+    # verification off on an https url is a different and much worse thing
+    # to copy into a real configuration by accident.
+
+    # The admin account.  The OSS edition refuses user management over
+    # REST, so `configure.sh` creates no read-only or publishing account.
+    authentication:
+      kind: basic
+      username:
+        kind: text
+        value: admin
+      password:
+        kind: property-file
+        config-relative-path: ../setup/artifactory/.env
+        key: ADMIN_PASSWORD
+
+    repositories:
+      # `maven-a` authenticated, beside the anonymous entry below.  A run
+      # that works through `artifactory-local-maven-a` and fails through
+      # `-auth-a` says the credentials are wrong; one that fails through the
+      # anonymous entry and works authenticated says the anonymous grant is.
+      artifactory-local-maven-auth-a:
+        name: maven-a
+        kind: maven
+        access: read
+
+      # Copy tests write into `maven-b` rather than `maven-a`: the publish
+      # tests fill `maven-a`, and a copy of a coordinate it already holds
+      # would meet a different build of the same file.
+      artifactory-local-maven-b:
+        name: maven-b
+        kind: maven
+      artifactory-local-maven-c:
+        name: maven-c
+        kind: maven
+
+      # Generic repositories, read and written as raw files.
+      artifactory-local-generic-a:
+        name: generic-a
+        kind: generic
+      artifactory-local-generic-b:
+        name: generic-b
+        kind: generic
+      artifactory-local-generic-c:
+        name: generic-c
+        kind: generic
+
+      # Ivy repositories, read as raw files laid out name/version/file.
+      # The kind offers no target.
+      artifactory-local-ivy-a:
+        name: ivy-a
+        kind: ivy
+      artifactory-local-ivy-b:
+        name: ivy-b
+        kind: ivy
+      artifactory-local-ivy-c:
+        name: ivy-c
+        kind: ivy
+
+      # The same repository as `artifactory-local-maven-b`, kept under its
+      # own name for the overwrite-guard test.
+      artifactory-local-maven-b-guarded:
+        name: maven-b
+        kind: maven
+        access: write
+        target:
+          options:
+            overwrite-guard: check
+
+# Anonymous access, in the low-level form.  `configure.sh` grants anonymous
+# read of each format's "a" repository and leaves "b" and "c" requiring a
+# user.
+hosts:
+  artifactory-local-anonymous:
+    url: http://localhost:8082/artifactory/
+    insecure-transport: true
+
+sources:
+  artifactory-local-maven-a:
+    host: artifactory-local-anonymous
+    kind: maven
+    host-path: maven-a
+
+enumerators:
+  # Artifactory refuses AQL to an anonymous caller, so an anonymous
+  # enumerator walks the Maven layout instead.
+  artifactory-local-maven-a:
+    host: artifactory-local-anonymous
+    kind: maven-html-index
+    host-path: maven-a
+
+# Writes authenticate, through the host the `artifactory-local` server
+# generates.
+targets:
+  artifactory-local-maven-a:
+    host: artifactory-local
+    kind: maven
+    host-path: maven-a

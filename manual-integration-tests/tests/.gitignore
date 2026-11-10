@@ -1,0 +1,5 @@
+# The tests spit out the database records into this directory.
+# They don't belong in the commit history.
+/*.sqlite
+/*.sqlite-shm
+/*.sqlite-wal

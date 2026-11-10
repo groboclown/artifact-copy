@@ -1,0 +1,19 @@
+# Artifact Keeper.  Repositories live under '{format}/{name}'.
+access: [read, write]
+
+# A bare "host:" renders null, which loading rejects; emit it only with values.
+{{#if values}}
+host:
+{{#if values.connect-timeout}}
+  connect-timeout: {{yaml values.connect-timeout}}
+{{/if}}
+{{#if values.request-timeout}}
+  request-timeout: {{yaml values.request-timeout}}
+{{/if}}
+{{#if values.maximum-concurrent-downloads}}
+  maximum-concurrent-downloads: {{yaml values.maximum-concurrent-downloads}}
+{{/if}}
+{{#if values.maximum-concurrent-uploads}}
+  maximum-concurrent-uploads: {{yaml values.maximum-concurrent-uploads}}
+{{/if}}
+{{/if}}

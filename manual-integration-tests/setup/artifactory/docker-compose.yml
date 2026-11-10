@@ -1,0 +1,174 @@
+# A single-node JFrog Artifactory, plus a throwaway container that
+# configures it for first use.
+#
+# Same shape as the Nexus cluster beside it and for the same reasons: the
+# server runs until you stop it, the configuration runs once and exits, and
+# the configuration talks to the REST API over the compose network exactly
+# as an outside client would.
+#
+# NEVER run this anywhere real.  There is no TLS, the server is wide open on
+# a local port, and the whole cluster is disposable.
+#
+# Start it through `../start.sh artifactory`, which generates the `.env`
+# this file requires.  Running `docker compose up` directly fails with a
+# message naming the missing variable rather than starting on a default
+# password.
+#
+# Usage:
+#   ../start.sh artifactory
+#   docker compose -f docker-compose.yml logs -f configure
+#
+# Artifactory is slower to start than Nexus - three to five minutes on a
+# first run, while it builds its embedded database - and the configure
+# container waits for it.
+#
+# # What this edition can hold
+#
+# The OSS edition serves Maven - with Gradle, Ivy and SBT sharing its
+# layout - and generic repositories, and nothing else.  npm, PyPI and Go
+# are Pro features.  Current images create such a repository without
+# complaint; whether they serve it is untested.
+#
+# That is why this server's anonymous repository is the Maven one, where
+# Nexus's is PyPI.  It is the format both products can actually serve.
+
+name: artifact-copy-artifactory
+
+services:
+  artifactory:
+    # JFrog's own registry, which serves this without credentials.
+    # Unpinned by default; set ARTIFACTORY_VERSION for a reproducible run.
+    image: releases-docker.jfrog.io/jfrog/artifactory-oss:${ARTIFACTORY_VERSION:-latest}
+    container_name: am-artifactory
+
+    # Access reads its import file only at startup.
+    depends_on:
+      access-config:
+        condition: service_completed_successfully
+
+    environment:
+      # Artifactory reads its own tuning from this rather than from JVM
+      # flags directly.  Left small on purpose: this holds a handful of test
+      # artifacts, not a build farm.
+      JF_SHARED_NODE_ID: am-artifactory
+      EXTRA_JAVA_OPTIONS: >-
+        -Xms512m
+        -Xmx2g
+
+      # The router's listening port.  Everything here - the port mapping,
+      # the configure service, and `server-config.d` - expects 8082.
+      JF_ROUTER_ENTRYPOINTS_EXTERNALPORT: "8082"
+
+      # Newer images refuse embedded Derby unless told otherwise.  Derby
+      # keeps this to one service.  JFrog's `config.sh` would write this
+      # into `system.yaml`; the image reads `JF_*` variables as overrides
+      # of that file, so no `config.sh` run is needed.
+      JF_SHARED_DATABASE_ALLOWNONPOSTGRESQL: "true"
+
+    ports:
+      # 8082 is the JFrog Platform router, which serves both the UI and the
+      # REST APIs, and is what everything here talks to.  8081 reaches the
+      # artifactory service directly and is deliberately not published -
+      # two ways in would mean two things to keep configured.
+      #
+      # Defaulted away from 8081 so this can run beside the Nexus cluster.
+      - "${ARTIFACTORY_PORT:-8082}:8082"
+
+    volumes:
+      # Named rather than a bind mount: the image runs as uid 1030 and a
+      # bind mount onto a host directory fails on its ownership before
+      # Artifactory prints anything useful about why.
+      - artifactory-data:/var/opt/jfrog/artifactory
+
+    # No healthcheck, for the reason the Nexus file gives: it would have to
+    # run inside this image, and which HTTP client JFrog ships is their
+    # business.  The configure service polls from outside instead.
+    restart: unless-stopped
+
+    # JFrog recommends higher ulimits.  For the sample application, this isn't needed.
+    #ulimits:
+    #  nproc: 65535
+    #  nofile:
+    #    soft: 32000
+    #    hard: 40000
+
+    #networks:
+    #  - no-internet
+
+  # Places `access.config.import.yml` in the data volume before Artifactory
+  # starts - the one host-side step of JFrog's `config.sh` this needs.
+  #
+  # Root, because a new volume's root is owned by root; everything it
+  # touches is handed to 1030, the uid the Artifactory image runs as.  Runs
+  # on every start, since Access consumes the file.
+  access-config:
+    image: docker.io/curlimages/curl:${CURL_VERSION:-latest}
+    container_name: am-artifactory-access-config
+    user: "0:0"
+
+    volumes:
+      - artifactory-data:/var/opt/jfrog/artifactory
+      - ./access.config.import.yml:/access.config.import.yml:ro
+
+    entrypoint:
+      - sh
+      - -c
+      - >-
+        mkdir -p /var/opt/jfrog/artifactory/etc/access &&
+        cp /access.config.import.yml /var/opt/jfrog/artifactory/etc/access/ &&
+        chown 1030:1030
+        /var/opt/jfrog/artifactory
+        /var/opt/jfrog/artifactory/etc
+        /var/opt/jfrog/artifactory/etc/access
+        /var/opt/jfrog/artifactory/etc/access/access.config.import.yml
+
+    restart: "no"
+    network_mode: none
+
+  configure:
+    image: docker.io/curlimages/curl:${CURL_VERSION:-latest}
+    container_name: am-artifactory-configure
+
+    depends_on:
+      - artifactory
+
+    environment:
+      # The service name, not localhost: this runs in its own container.
+      ARTIFACTORY_URL: http://artifactory:8082
+
+      # Generated into this directory's `.env` by `../sctl.sh`.  There is
+      # no default: a server whose password falls back to a constant when
+      # the `.env` is missing is exactly the accident this avoids.
+      ARTIFACTORY_ADMIN_USER: ${ARTIFACTORY_ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?run ../sctl.sh artifactory, which generates .env}
+
+      # Which repositories to create.  `maven`, `generic`, and `ivy` are
+      # what this edition serves.
+      ARTIFACTORY_FORMATS: ${ARTIFACTORY_FORMATS:-maven generic ivy}
+
+      # Artifactory's out-of-the-box administrator password, which this
+      # replaces on a first run.
+      ARTIFACTORY_BOOTSTRAP_PASSWORD: ${ARTIFACTORY_BOOTSTRAP_PASSWORD:-password}
+
+      # Artifactory builds its database on a first start, so this waits
+      # longer than the Nexus one.
+      WAIT_SECONDS: ${WAIT_SECONDS:-900}
+
+    volumes:
+      - ./configure.sh:/configure.sh:ro
+
+    entrypoint: ["sh", "/configure.sh"]
+
+    # It configures and exits.  Restarting it on failure would hide the
+    # failure behind a loop.
+    restart: "no"
+
+    networks:
+      - no-internet
+
+volumes:
+  artifactory-data:
+
+networks:
+  no-internet:
+    internal: true

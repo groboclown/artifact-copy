@@ -1,0 +1,33 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+setup:
+  log:
+    level: info
+    # output-format: ansi
+  thread-pool-size: 8
+
+  # Relative to the config file location.
+  # This ../../../ points up to the root of the project.
+  cache-dir: ../../../local-cache/
+
+  # When a repository does not report an artifact's publish time and a
+  # publish window is configured, is the artifact allowed through?
+  #
+  # 'refuse' is the default and the stricter reading: an artifact that
+  # cannot be shown to be old enough is skipped.  Overridden per source
+  # below, because whether timestamps exist is a property of the repository
+  # rather than of the run.
+  unknown-publish-time: refuse
+
+  # Keyservers consulted for PGP signing keys that 'signing-keys' does not
+  # pin.  Empty by default, which means nothing is fetched: a key looked up
+  # in order to check a signature is much weaker evidence than one someone
+  # decided to trust, so asking a third party is opt-in.  Overridable per
+  # host, because an air-gapped mirror has no keyserver to ask.
+  keyservers:
+    - https://keys.openpgp.org
+
+  # Bodies larger than this are streamed to disk instead of being held
+  # in memory.  Enumerating a million artifacts leaves no room for
+  # anything else.
+  maximum-in-memory-download: 64 MiB

@@ -1,0 +1,120 @@
+# A single-node Sonatype Nexus Repository, plus a throwaway container that
+# configures it for first use.
+#
+# Two services rather than one because they have different lifetimes: the
+# server runs until you stop it, and the configuration runs once and exits.
+# Keeping the configuration in its own container is also what keeps it
+# reproducible - it talks to the REST API over the compose network exactly
+# as an outside client would, so nothing it does depends on being inside the
+# server's image.
+#
+# NEVER run this anywhere real.  There is no TLS, the server is wide open on
+# a local port, and the whole cluster is disposable.
+#
+# Start it through `../start.sh nexus`, which generates the `.env` this file
+# requires.  Running `docker compose up` directly fails with a message
+# naming the missing variable rather than starting on a default password.
+#
+# Usage:
+#   ../start.sh nexus
+#   docker compose -f docker-compose.yml logs -f configure
+#
+# Nexus takes one to three minutes to become ready on a first run, and the
+# configure container waits for it.
+
+name: artifact-copy-nexus
+
+services:
+  nexus:
+    # Unpinned on purpose: this is a scratch server, and the Cargo format
+    # needs a recent Nexus.  Pin it for a reproducible run by setting
+    # NEXUS_VERSION, which is the one knob that decides what formats exist:
+    #   NEXUS_VERSION=3.79.0 docker compose up -d
+    image: docker.io/sonatype/nexus3:${NEXUS_VERSION:-latest}
+    container_name: am-nexus
+
+    environment:
+      # Nexus will not start in the default container memory settings on
+      # some hosts.  These are the smallest values Sonatype documents as
+      # workable, which is the point of a test cluster.
+      INSTALL4J_ADD_VM_PARAMS: >-
+        -Xms1200m
+        -Xmx1200m
+        -XX:MaxDirectMemorySize=2g
+        -Djava.util.prefs.userRoot=/nexus-data/javaprefs
+
+    ports:
+      - "${NEXUS_PORT:-8081}:8081"
+
+    volumes:
+      # Named rather than a bind mount: the image runs as uid 200 and a bind
+      # mount onto a host directory fails on its ownership before Nexus
+      # prints anything useful about why.
+      - nexus-data:/nexus-data
+
+    # No healthcheck here deliberately.  One would have to run inside this
+    # image, and which HTTP client it ships is Sonatype's business and
+    # changes between releases - a healthcheck calling a missing binary
+    # reports "unhealthy" forever and looks like a broken server.  The
+    # configure service polls the status endpoint from outside instead.
+    restart: unless-stopped
+
+    #networks:
+    #  - no-internet
+
+  configure:
+    image: docker.io/curlimages/curl:${CURL_VERSION:-latest}
+    container_name: am-nexus-configure
+
+    # Root so it can read the generated bootstrap password out of the
+    # server's data volume.  That file is written as uid 200 and this image
+    # otherwise runs as a non-root user.
+    user: "0:0"
+
+    depends_on:
+      - nexus
+
+    environment:
+      # The service name, not localhost: this runs in its own container.
+      NEXUS_URL: http://nexus:8081
+      # Generated into this directory's `.env` by `../sctl.sh`.  There is
+      # no default: a server whose password falls back to a constant when
+      # the `.env` is missing is exactly the accident this avoids.
+      NEXUS_ADMIN_USER: ${NEXUS_ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?run ../sctl.sh nexus, which generates .env}
+      PUBLISH_PASSWORD: ${PUBLISH_PASSWORD:?run ../sctl.sh nexus, which generates .env}
+      READONLY_PASSWORD: ${READONLY_PASSWORD:?run ../sctl.sh nexus, which generates .env}
+
+      # The two non-admin accounts.  Named here rather than in the script so
+      # `server-config.d` has one place to agree with.
+      PUBLISH_USER: ${PUBLISH_USER:-am-publisher}
+      READONLY_USER: ${READONLY_USER:-am-reader}
+
+      # Which repositories to create.  Formats this Nexus does not know are
+      # reported by name rather than skipped quietly.
+      NEXUS_FORMATS: ${NEXUS_FORMATS:-raw npm pypi maven cargo}
+
+      # How long to wait for a cold start before giving up.
+      WAIT_SECONDS: ${WAIT_SECONDS:-300}
+
+    volumes:
+      # Read-only: this needs the bootstrap password and nothing else from
+      # the server's data.
+      - nexus-data:/nexus-data:ro
+      - ./configure.sh:/configure.sh:ro
+
+    entrypoint: ["sh", "/configure.sh"]
+
+    # It configures and exits.  Restarting it on failure would hide the
+    # failure behind a loop.
+    restart: "no"
+
+    networks:
+      - no-internet
+
+volumes:
+  nexus-data:
+
+networks:
+  no-internet:
+    internal: true

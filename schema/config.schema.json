@@ -1,0 +1,1680 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Artifact Copy Configuration Schema",
+  "Description": "All configuration options available to the configuration files.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema"
+  ],
+  "properties": {
+    "$schema": {
+      "const": "https://github.com/groboclown/artifact-copy/schema/config.schema.json"
+    },
+    "$comment": {
+      "$ref": "#/$defs/Comment"
+    },
+    "$comments": {
+      "$ref": "#/$defs/Comments"
+    },
+    "setup": {
+      "title": "Execution settings",
+      "description": "Common settings to use for execution.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "cache-dir": {
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "cache-payloads": {
+          "description": "Whether a downloaded payload stays cached once it has reached every destination. 'reuse' keeps it, so a later run does not fetch it again; 'discard' removes it, so a large migration does not grow a second copy of the repository on local disk.",
+          "type": "string",
+          "enum": [
+            "reuse",
+            "discard"
+          ],
+          "default": "reuse"
+        },
+        "cache-retention": {
+          "description": "How long a cached file stays after its last use, for every source, enumerator, and advisor that does not set its own.  A file past it is evicted and fetched again when next needed, recorded as 'cache-entry-expired'.  Absent is forever.",
+          "$ref": "#/$defs/Lifetime"
+        },
+        "cache-freshness": {
+          "description": "How long a cached file may be used before it is fetched again, by file name.  Tried after a binding's own 'cache-freshness' and before the built-in rules, which keep inventory documents ('maven-metadata.xml*', 'index.html', 'packument.json', 'simple.html', 'detail.json') an hour, 'simple-index.json' a day, and every other file forever.  The first matching rule wins.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FreshnessRule"
+          }
+        },
+        "cache-size": {
+          "description": "The most the whole cache directory may hold, such as '20 GiB'.  After each fetch past it, the least recently used files go first, across every repository's folder, recorded as 'cache-entry-evicted'.  A file a run still needs, such as a payload not yet published, is never removed.  Absent is no cap.",
+          "$ref": "#/$defs/ByteSize"
+        },
+        "log": {
+          "title": "Logging",
+          "description": "How the run logs.  Command-line arguments override every setting here, and choose a log stream; a file here is the only destination the configuration can set.",
+          "type": "object",
+          "additionalProperties": false,
+          "not": {
+            "required": [
+              "config-relative-path",
+              "working-dir-path"
+            ]
+          },
+          "properties": {
+            "$comment": {
+              "$ref": "#/$defs/Comment"
+            },
+            "$comments": {
+              "$ref": "#/$defs/Comments"
+            },
+            "level": {
+              "description": "The least severe level to log.  Defaults to 'warn'.  The command-line flags and the RUST_LOG environment variable override it.",
+              "type": "string",
+              "enum": [
+                "trace",
+                "debug",
+                "info",
+                "warn",
+                "error",
+                "off"
+              ]
+            },
+            "output-format": {
+              "description": "How log lines are written.  'ansi' adds color when writing to a terminal and shows progress bars; 'plain' writes neither; 'json-stream' writes one JSON object per line.",
+              "type": "string",
+              "enum": [
+                "ansi",
+                "plain",
+                "json-stream"
+              ]
+            },
+            "config-relative-path": {
+              "$ref": "#/$defs/ConfigRelativePath"
+            },
+            "working-dir-path": {
+              "$ref": "#/$defs/WorkingDirPath"
+            }
+          }
+        },
+        "thread-pool-size": {
+          "description": "Number of concurrent threads for working.  Does not include host pools.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "license-policy": {
+          "description": "Default license policy to use for all hosts.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "security-policy": {
+          "description": "Default vulnerability and malware policy to use for all hosts.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "quarantine-policy": {
+          "description": "Per-artifact overrides of how quarantine issues are handled.  The third policy file, beside the license and security ones: nothing keyed by an artifact belongs in this configuration, so exceptions live in a file that can be reviewed on its own and carry its justification.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "signing-policy": {
+          "description": "Which PGP signing keys may vouch for which artifacts.  'signing-keys' supplies key material; this file assigns keys to artifacts.  Without one, every pinned key vouches for everything and a key fetched from a keyserver vouches for nothing.  See the signing policy schema.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "harden-quarantine": {
+          "description": "Make every soft quarantine stop its artifact instead of merely flagging it.  False by default.\n\nA blanket, run-scoped switch rather than a reclassification, and both are worth having: setting a code to 'hard' in 'problem-policy' says *this particular thing is serious* and lasts, while this says *runs from this configuration are strict* - which is what a release pipeline wants without rewriting a table it shares with development runs.  '--harden' turns it on for a single run.\n\nOnly soft decisions are affected.  A hard quarantine already stops the artifact, and 'allowed' and 'failure' are not quarantines at all, so there is nothing in the other three classes for this to act on.\n\nA loosening per-artifact override survives it: a rule saying 'allowed' leaves no quarantine to harden, so somebody who wrote an exception still has it in exactly the strict runs they wrote it for.",
+          "type": "boolean",
+          "default": false
+        },
+        "maximum-in-memory-download": {
+          "description": "Default ceiling on a response body held in memory.  Individual requests may ask for less, never more.  Bodies larger than this must be streamed to disk.",
+          "$ref": "#/$defs/ByteSize"
+        },
+        "maximum-in-memory-queued-dependencies": {
+          "description": "How many discovered dependencies a walk under --db=- holds in memory before it prunes the rest and reports spider-queue-full.  Any other walk has a report database, named or temporary, queues on disk, and ignores this.  Defaults to 100000.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "unknown-publish-time": {
+          "description": "The default answer for every source; a source may override it.  See UnknownPublishTime.",
+          "$ref": "#/$defs/UnknownPublishTime"
+        },
+        "sigstore-trusted-root": {
+          "description": "A Sigstore trusted_root.json file that PEP 740 attestations are checked against.  Absent, Sigstore's current root is fetched from its TUF repository the first time a run checks an attestation, and cached under 'cache-dir'.  Set it for an air-gapped run, or one that must not reach Sigstore.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "keyservers": {
+          "description": "HKP keyserver base URLs to consult for signing keys not pinned in 'signing-keys', such as 'https://keys.openpgp.org'.  Reached through a capability of their own, with no credentials, rather than through any host's.  The default for every host; a host may override it.  EMPTY BY DEFAULT, WHICH MEANS NOTHING IS FETCHED: a key looked up in order to check a signature is much weaker evidence than one a person decided to trust - at best it proves the signature was made by whoever holds that key, not that the key is the right one - so asking a third party is opt-in rather than a silent fallback.  An ecosystem that distributes its own keyring, such as a Debian archive keyring, belongs in this list too.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "server-kinds-dir": {
+          "title": "Server Kind Templates",
+          "description": "A directory of server-kind templates.  Each sub-directory is one kind, named for the directory, and replaces a built-in kind of the same name as a whole.  It holds 'server.yaml.hbs', rendered once per server, and one '{repository-kind}.yaml.hbs' per supported repository kind, rendered once per repository.  See the built-in 'server-kinds' directory for examples.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        }
+      }
+    },
+    "servers": {
+      "title": "Named Servers",
+      "description": "A collection of name (key) to server.  The friendly way to describe hosts, sources, targets, and enumerators: each server and its repositories generate the low-level entries.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/Server"
+        }
+      }
+    },
+    "repositories": {
+      "title": "Named Repositories",
+      "description": "A collection of name (key) to repository, each naming its server.  Lets repositories be spread across files while sharing one server.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/Repository"
+            },
+            {
+              "required": [
+                "server"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "sources": {
+      "title": "Named Sources",
+      "description": "A collection of name (key) to the source definition.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/Source"
+        }
+      }
+    },
+    "targets": {
+      "title": "Named Targets",
+      "description": "A collection of name (key) to the target definition.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/Target"
+        }
+      }
+    },
+    "enumerators": {
+      "title": "Named Artifact Enumerators",
+      "description": "A collection of name (key) to the enumerator definition.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/Enumerator"
+        }
+      }
+    },
+    "signing-keys": {
+      "title": "Named Signing Keys",
+      "description": "A collection of name (key) to a public key supplied by the user instead of fetched from a registry.  Referenced by name from a host's 'signing-keys'.  Declaring one here without referencing it grants no trust.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/SigningKey"
+        }
+      },
+      "additionalProperties": false
+    },
+    "hosts": {
+      "title": "Named Host",
+      "description": "A collection of name (key) to the host definition.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/Host"
+        }
+      }
+    },
+    "extensions": {
+      "title": "Named Extensions",
+      "description": "A collection of name (key) to the extension configuration.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/Extension"
+        }
+      }
+    },
+    "advisors": {
+      "title": "Named Advisors",
+      "description": "A collection of name (key) to the advisory source.  Advisors report known vulnerabilities and known malware for an artifact.  This is a separate question from integrity: a malicious package has a perfectly valid checksum.",
+      "type": "object",
+      "patternProperties": {
+        "^[a-zA-Z0-9._-]+$": {
+          "$ref": "#/$defs/Advisor"
+        }
+      }
+    },
+    "problem-policy": {
+      "title": "Problem Policy",
+      "description": "Per-code overrides of how problems are handled.  A code absent from this table keeps its built-in disposition, so an empty table behaves exactly as no table at all.\n\nProblem codes are a closed set, unlike an extension 'kind', so a misspelling is caught here rather than resolved later.\n\nOnly codes that say something about an artifact may be named.  A fault in the input a run was given - a configuration that will not load, a lock file in no known format - is fail-fast, and a table that could downgrade it to a warning would be a configuration excusing itself.\n\nNothing in this table is keyed by an artifact.  Per-artifact exceptions live in the license and quarantine policy files, and in VEX documents given with --lock, which is where an exception can be reviewed on its own and carry its justification.",
+      "type": "object",
+      "propertyNames": {
+        "enum": [
+          "checksum-mismatch",
+          "size-mismatch",
+          "signature-invalid",
+          "signature-key-revoked",
+          "signature-key-expired",
+          "signature-missing",
+          "signature-key-unvouched",
+          "artifact-not-found",
+          "version-unresolvable",
+          "host-unreachable",
+          "request-rejected",
+          "secondary-file-rejected",
+          "download-too-large",
+          "metadata-malformed",
+          "license-forbidden",
+          "license-unknown",
+          "license-unmatched",
+          "malware-known",
+          "vulnerability-known",
+          "vulnerability-under-investigation",
+          "advisory-version-unusable",
+          "advisory-source-stale",
+          "advisory-source-unavailable",
+          "vex-unparsable",
+          "vex-unmatched",
+          "vex-incomplete",
+          "bom-ecosystem-foreign",
+          "publish-too-recent",
+          "dependency-unresolved",
+          "dependency-metadata-dynamic",
+          "pom-profile-unsupported",
+          "pom-property-unresolved",
+          "listing-mismatch",
+          "upload-metadata-incomplete",
+          "distribution-type-unsupported",
+          "file-omitted",
+          "artifact-omitted"
+        ]
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/ProblemClass"
+      }
+    }
+  },
+  "$defs": {
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment, for users of the configuration.",
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 5000
+    },
+    "Comments": {
+      "title": "Comment List",
+      "description": "A list of comments.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Comment"
+      },
+      "minItems": 0,
+      "maxItems": 100
+    },
+    "ConfigRelativePath": {
+      "title": "Configuration-Relative Path",
+      "description": "Location on the local computer.  A RELATIVE PATH IS TAKEN AGAINST THE DIRECTORY HOLDING THE CONFIGURATION FILE THAT DECLARES IT, so a policy file beside a configuration is found whatever directory the tool was run from, and the meaning does not change when configuration files are passed in a different order.  Every `config-relative-path` follows this rule.  The `working-dir-path` used by a 'property-file' secret follows the '.env' convention instead.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000
+    },
+    "WorkingDirPath": {
+      "title": "Working-Directory-Relative Path",
+      "description": "A relative path relative to the working directory.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000
+    },
+    "Command": {
+      "title": "Command",
+      "description": "An executable to run, resolved exactly as the operating system would: a bare name such as 'python3' is looked up on PATH, and a path is taken against the working directory.  Deliberately not a `config-relative-path`: anchoring it to the configuration file would make 'python3' mean '<config-dir>/python3' and stop an installed interpreter being found.  Name an absolute path to run something that ships beside the configuration.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 5000
+    },
+    "Url": {
+      "title": "URL",
+      "description": "Universal Resource Location.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 5000
+    },
+    "Duration": {
+      "title": "Duration",
+      "description": "A duration of time, in seconds, with a maximum duration of 1 year.",
+      "oneOf": [
+        {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 31536000
+        },
+        {
+          "description": "a number followed by a unit, one of 'ms' or 'millisecond' or 'milliseconds', 'sec' or 'second' or 'seconds', or 'min' or 'minute' or 'minutes', 'hr' or 'hour' or 'hours', 'day' or 'days'.  The number can only be an integer, but can use '_' as a place separator.",
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100
+        }
+      ]
+    },
+    "Lifetime": {
+      "title": "Lifetime",
+      "description": "A duration, or 'forever' for no limit.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Duration"
+        },
+        {
+          "type": "string",
+          "const": "forever"
+        }
+      ]
+    },
+    "OmitRule": {
+      "title": "Omit Rule",
+      "description": "One omission: 'files' alone, 'purl' alone, or both.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "purl": {
+          "description": "A purl pattern, as a quarantine rule's: a glob over the name, optionally with '@' and an ecosystem version range, such as 'pkg:maven/org.example/lib@[1.0,1.2)'.",
+          "type": "string",
+          "pattern": "^pkg:"
+        },
+        "files": {
+          "description": "A file name glob, with '*' for any run of characters and '?' for one, such as '*.sha256'.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "NamePattern": {
+      "title": "Name Pattern",
+      "description": "A literal name, and a version pattern holding at most one '*'.  An absent version is '*'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "NameRule": {
+      "title": "Name Rule",
+      "description": "The source's 'from' name and tag pattern become the artifact's 'to' name and version.  Both versions hold one '*' or neither does, and the '*' carries the varying part across: 'v*' to '*' reads tag 'v8.18.0' as version '8.18.0'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/NamePattern"
+        },
+        "to": {
+          "$ref": "#/$defs/NamePattern"
+        }
+      }
+    },
+    "FreshnessRule": {
+      "title": "Freshness Rule",
+      "description": "Cached files whose name matches 'files' may be used for 'fresh-for' after they were fetched.  The name is a payload's file name, or for an inventory document the name its source caches it under: 'maven-metadata.xml', 'index.html' (a Maven directory listing), a POM's or sidecar's own file name, 'packument.json', 'simple.html', 'detail.json', a '.metadata' file's own name, 'simple-index.json', 'release.json'.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "fresh-for"
+      ],
+      "properties": {
+        "files": {
+          "description": "A whole file name, with '*' for any run of characters and '?' for one, such as 'maven-metadata.xml*'.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "fresh-for": {
+          "$ref": "#/$defs/Lifetime"
+        }
+      }
+    },
+    "NamedReference": {
+      "title": "Named Reference",
+      "description": "A reference to a named value in one of the top-level collections.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "Retry": {
+      "title": "Retry Handling",
+      "description": "How to handle retries for this host.\n\nA base policy, plus per-status overrides.  One back-off curve cannot serve every failure, because the failures do not mean the same thing: a 504 often means a gateway is restarting, so minutes of patience is right and three seconds is not; a 429 means the server is stating the rate it will accept, so the useful response is to believe it; and a 500 is transient on one system and permanent on another, which only whoever runs that system knows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "retry": {
+          "$ref": "#/$defs/RetryRule/properties/retry"
+        },
+        "max-retries": {
+          "$ref": "#/$defs/RetryRule/properties/max-retries"
+        },
+        "initial-delay": {
+          "$ref": "#/$defs/RetryRule/properties/initial-delay"
+        },
+        "maximum-delay": {
+          "$ref": "#/$defs/RetryRule/properties/maximum-delay"
+        },
+        "maximum-total-retry-seconds": {
+          "$ref": "#/$defs/RetryRule/properties/maximum-total-retry-seconds"
+        },
+        "exponential-back-off": {
+          "$ref": "#/$defs/RetryRule/properties/exponential-back-off"
+        },
+        "incremental-delay": {
+          "$ref": "#/$defs/RetryRule/properties/incremental-delay"
+        },
+        "honor-retry-after": {
+          "$ref": "#/$defs/RetryRule/properties/honor-retry-after"
+        },
+        "on-status": {
+          "title": "Per-Status Overrides",
+          "description": "Retry rules keyed by an exact status code ('504') or a class ('5xx').  An exact code beats a class, a class beats the default statuses, and those beat the base policy, so '5xx' can set a patient default for every 5xx, 503 included, while a '503' rule stays sharp.\n\nA rule inherits everything it does not state from the base policy, so giving 504 a longer delay does not mean restating the retry count and the budget.\n\nFor example, waiting out a restarting gateway while leaving everything else brisk:\n\n  retry:\n    max-retries: 3\n    initial-delay: 1 sec\n    on-status:\n      504:\n        max-retries: 10\n        initial-delay: 30 sec\n        maximum-delay: 5 min\n        maximum-total-retry-seconds: 1 hr\n      500:\n        retry: false",
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {
+            "^([1-5][0-9]{2}|[1-5][xX]{2})$": {
+              "$ref": "#/$defs/RetryRule"
+            }
+          }
+        },
+        "on-transport-error": {
+          "description": "How to treat a connection that failed before any status arrived: a refused connection, a DNS failure, a TLS handshake error.  Retried by default, because these are overwhelmingly transient.",
+          "$ref": "#/$defs/RetryRule"
+        },
+        "use-default-statuses": {
+          "title": "Use the Built-in Retryable Statuses",
+          "description": "Whether 408, 429, 500, 502, 503 and 504 retry without being listed.  True by default.  A class rule such as '5xx' covers the default statuses in it, and a base 'retry: false' turns them off.\n\nThe default set is deliberately short.  A blanket 'retry every failure' turns a misconfiguration into a slow one: a 401 retried four times is four times the wait before the user learns their token is wrong, and a 404 retried at all is pure delay.\n\nSet this false to start from nothing and enumerate exactly which statuses retry, for a system whose codes do not mean what the HTTP registry says.  To turn off a single status instead, write 'on-status: {500: {retry: false}}'.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "RetryRule": {
+      "title": "Retry Rule",
+      "description": "One retry policy.  Every field is optional: a per-status rule inherits whatever it does not state from the host's base policy.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "retry": {
+          "description": "Whether to retry at all.  Exists so a single status can be switched off - '500: {retry: false}' against a system where a 500 is always permanent - which a delay setting alone cannot express.  At the base, 'false' turns off every retry a rule does not switch back on, the default statuses and transport errors included; 'true' retries nothing beyond the listed statuses.",
+          "type": "boolean"
+        },
+        "max-retries": {
+          "description": "Attempts after the first.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 3
+        },
+        "initial-delay": {
+          "description": "Wait before the first retry.",
+          "$ref": "#/$defs/Duration",
+          "default": 1.0
+        },
+        "maximum-delay": {
+          "description": "Ceiling on a computed delay.  A 'Retry-After' the server stated is honored above this: clamping a stated 120 seconds down to 30 would mean ignoring the answer and hammering.",
+          "$ref": "#/$defs/Duration",
+          "default": 30.0
+        },
+        "maximum-total-retry-seconds": {
+          "description": "Total time budget across all retries.  A wait that would exceed it means giving up rather than overrunning it.",
+          "$ref": "#/$defs/Duration",
+          "default": 300.0
+        },
+        "exponential-back-off": {
+          "description": "Double the delay each attempt.  On by default: both Maven Central and PyPI ask integrators to back off rather than retry at a constant rate, and a fixed one-second retry against a struggling server is closer to a denial of service than to politeness.",
+          "type": "boolean",
+          "default": true
+        },
+        "incremental-delay": {
+          "description": "Add this much to the delay each attempt.  Wins over 'exponential-back-off', being the more specific statement of the two.",
+          "$ref": "#/$defs/Duration"
+        },
+        "honor-retry-after": {
+          "description": "Whether a wait the server states overrides the computed delay.  On by default: the server is stating the rate it will accept, and a client that applies its own curve instead is guessing against information it was given.  Read from 'Retry-After', then 'RateLimit-Reset' (delta-seconds), then 'X-RateLimit-Reset' (epoch seconds) when 'X-RateLimit-Remaining' is 0, as GitHub sends it.  A stated wait is never clamped to 'maximum-delay', but a wait past 'maximum-total-retry-seconds' gives up, and the error names the time to retry after.  GitHub reports an exhausted limit as 403, which retries only where the host's plan says so.",
+          "type": "boolean",
+          "default": true
+        }
+      }
+    },
+    "Source": {
+      "title": "Source Repository",
+      "description": "Description of a source repository.\n\nExactly one of 'host' or 'proxy-to' is required, and never both.  An ordinary source names the host it reads from.  A proxy source names the sources it stands in front of instead, and has no host of its own: its I/O happens in those upstreams, each of which names its own host.\n\nA proxy that genuinely needs a host - one consulting an index to decide which upstream should answer - takes it from 'options' and never from 'host', because that field means 'the host this repository is'.  Such a proxy should name its option for the job it does ('index-host', say) rather than 'host'.  The case is exceptional; no built-in proxy needs one.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "host": {
+          "description": "Where this repository lives.  Required for every source but a proxy, and forbidden for a proxy.",
+          "$ref": "#/$defs/NamedReference"
+        },
+        "host-path": {
+          "description": "Where under the host this repository lives, joined onto the host's url to give the root this source reads from.  Absent means the host's url is already that root, which is the ordinary case for a registry that is a whole site.\n\nThis is what lets a repository manager use one host rather than several.  Nexus and Artifactory serve many repositories from one server, each under its own prefix, while their enumerators build a REST API off the server root - so 'url' stays the server and the prefix goes here.  A host entry per repository would instead duplicate the credentials, the retry rule and the connection limits that belong to the server.\n\nThe source is confined to the joined prefix rather than to the host's url, so one reading 'repository/npm-group' still cannot reach 'repository/maven-public' on the same server.\n\nLeading and trailing slashes are optional.  '.' and '..' segments are refused: a prefix that climbed out of the host would be a confinement nobody could read off the configuration.\n\nNamed for what it is a path under - the host - because a configuration has several other kinds: a policy file's path on disk, a sandbox path, a lock file's.  This one is a URL prefix and nothing else.",
+          "type": "string",
+          "examples": [
+            "repository/npm-group",
+            "artifactory/api/npm/npm-local"
+          ]
+        },
+        "minimum-publish-time": {
+          "description": "Minimum time since the publish date to allow using artifacts from this source.",
+          "$ref": "#/$defs/Duration"
+        },
+        "kind": {
+          "title": "Source Kind",
+          "description": "Which implementation reads this repository.  Built-in: 'maven', 'pypi', 'npm', 'github', 'nexus', 'artifactory', 'artifact-keeper', 'local-directory', and the proxies 'proxy-failover' and 'proxy-merge'.  Any other value names an entry in the top-level 'extensions' collection, which is why this is not an enumeration - a user's own source is named exactly the way a built-in is.  The trade is that a typo cannot be caught here; run validate-config, which resolves every kind and names the near misses.\n\n'maven', 'pypi', and 'npm' say nothing about which product hosts the repository: a 'maven' source may be Central, Nexus, Artifactory, or a plain static file server.  'nexus', 'artifactory', and 'artifact-keeper' read a repository on that product: the ecosystem's protocol, plus the digests, sizes, publish times, and (for Maven) classifier files the product's API reports.  They take the options 'repository' and 'ecosystem', and no 'host-path'.  'nexus' and 'artifact-keeper' with 'ecosystem: raw' read a repository of any format as raw files, and 'artifactory' a generic one, laid out by the 'mapping' option.  'artifact-keeper' also reads 'mode': absent or 'hosted' for a hosted repository; 'proxy' for a Remote (proxy) repository whose cache catalog decides which versions and files exist, with metadata and dependencies read through the protocol; 'proxy-cache' for a Remote read from its cache catalog alone, with no dependencies or license and no protocol request.  'local-directory' reads a directory on this machine as raw files, through a 'file://' host, laid out by the 'mapping' option.",
+          "$ref": "#/$defs/Kind"
+        },
+        "version-handler": {
+          "description": "How this repository's versions are read and ordered.\n\n**Only a kind whose contents decide its versions may set this.**  'github' does: a tag is text its publisher chose, so 'v2.1.0', 'nightly' and '2024-06-01' are all real, and the default refuses to order them.  A project that does tag semver says so, which is what makes a range resolvable at all.  'nexus', 'artifactory', and 'artifact-keeper' with 'ecosystem: raw' and 'mapping: name-version-file' are the same case and more so - they have no ecosystem to take a convention from.  Under any other mapping a raw repository reads no version, and the setting is refused.\n\nSetting it on 'maven', 'npm' or 'pypi' is refused rather than ignored.  Those speak an ecosystem that already decides the ordering: npm is semver, Maven is ComparableVersion, PyPI is PEP 440.  That is not a preference, it is what the repository is, and a configuration disagreeing would resolve a plausible-looking wrong artifact rather than failing.\n\nAbsent means the ecosystem's own, which is what every configuration written before this key existed says - so saying nothing behaves exactly as it did.\n\n'semver' is node-semver, which is npm's dialect and not Cargo's.  'maven' is ComparableVersion ordering with bracketed ranges.  'pep440' is Python's.  'tags' orders nothing and refuses every range, which is the honest answer for names that follow no scheme.\n\nA closed set, unlike 'kind': these are conventions rather than protocols, so a typo is caught here.",
+          "enum": [
+            "maven",
+            "pep440",
+            "semver",
+            "tags"
+          ]
+        },
+        "names": {
+          "description": "How this repository's names become the artifacts a request names.  Only 'github' reads it.\n\nA request names the 'to' side, and that is the artifact's only identity: in the report, in quarantine rules, and on the target.  A repository a rule names is reachable only through its rules, and its tags no rule admits are hidden, so one release cannot land under two names.  A repository no rule names keeps its own name.\n\nEvery rule is consulted.  A request more than one rule admits is refused as ambiguous rather than settled by rule order.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/NameRule"
+          }
+        },
+        "enumerator": {
+          "$ref": "#/$defs/NamedReference"
+        },
+        "omit": {
+          "description": "Files and whole artifacts to leave out, on top of the ecosystem's built-in omissions (checksum sidecars, and for Maven 'maven-metadata.xml' and '_remote.repositories').  A rule with only 'files' leaves matching files out of every artifact; one with only 'purl' leaves out whole artifacts; one with both leaves matching files out of matching artifacts.  Rules only ever omit more: nothing brings back a built-in omission.\n\nOn a source, an omitted file is never fetched, and an omitted artifact never resolves.  On an enumerator, it is not recorded.  On a target, it is fetched and verified as usual and never uploaded, for a target that refuses a repository's own checksum files.  An omission governs an artifact's files, not the documents a source reads to learn them: omitting 'maven-metadata.xml' or '*.pom' does not stop the Maven source fetching either.\n\nEach file a rule leaves out is reported as 'file-omitted' (ignored by default) and each artifact as 'artifact-omitted' (a warning); a target records the artifact as refused.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OmitRule"
+          }
+        },
+        "options": {
+          "description": "Options for this entry, interpreted by its kind.\n\nFree-form, because an extension knows what it needs and this schema cannot.  Two keys are well known and mean the same thing everywhere, so a user does not have to learn a different spelling of 'which repository' per product:\n\n  repository - which repository within the host this entry refers to.  Meaningless for a registry that is itself one repository, and required by every repository manager.\n\n  ecosystem - which ecosystem this instance handles.  A repository manager such as Nexus or Artifactory hosts many formats behind one API, so its implementation speaks several while a configured instance points at one repository holding one format.  Declare it rather than having the tool probe: probing costs a round trip, is a guess, and fails outright on an empty repository.  A registry adapter ignores this key.\n\nFor example:\n\n  kind: nexus3\n  host: nexus\n  options:\n    repository: maven-releases\n    ecosystem: maven\n\nGitHub sources require:\n\n  repositories - the repositories this source may read, as 'owner/repo' or 'owner/pattern'.  The owner is literal; the repository name may hold '*', which matches any run of characters, so 'gitleaks/*' and 'artifactory/web-*' are accepted and '*/gitleaks' is refused.  Matching ignores case, as GitHub does.  A request outside the list is refused before anything is fetched.\n\nMaven sources also understand:\n\n  file-listing - 'none' (the default) or 'html-index'.  Under 'html-index', each resolved release also reads its version directory's HTML index, one request per version, and gains the files the POM does not name: classifiers such as '-sources' and '-javadoc', Gradle's '.module', and SBOMs, each with its '.asc'.  For a host that serves a directory autoindex, such as Maven Central; the 'maven-central' server kind sets it.\n\n  version-discovery - how versions maven-metadata.xml does not list are found, since a repository's metadata can be stale (Central's for qdox:qdox lists 0.1 to 1.5 while 1.6.1 is served).  Under every value but 'metadata', an exact release version is confirmed by fetching its POM before any list is read; the POM is reused, so this costs no extra request, and a mirror can serve it.  'probe' (the default) confirms an exact requested version the list lacks by a HEAD of its POM, a request only when the list falls short.  'html-index' joins the artifact directory's HTML index with the metadata, one request per artifact, for a host that serves an autoindex; the 'maven-central' server kind sets it.  'both' does both.  'metadata' trusts maven-metadata.xml alone.\n\n  checksums - which checksum sidecars to probe beside a fetched POM, in order, stopping at the first one published; a configured list is probed exactly as written.  Absent, the source learns what its repository serves: its first 8 POMs are probed for 'sha512', 'sha256', 'sha1', and 'md5', and afterwards only 'sha1', 'md5', and any stronger one it found, the one found last first, so it never costs more than Maven's own resolver order after that trial.  An empty list means probe none, which is the right setting for a repository known to publish no checksums.\n\nThe 'nexus', 'artifact-keeper', and 'github' kinds read 'max-listing-rows': the most rows one paged listing reads before giving up, as a guard against a server that never stops paging.  The defaults are 10000 for 'nexus' and 'github', and 20000 for 'artifact-keeper'.  Raise it for a repository holding an exceptional number of files, such as years of daily builds.",
+          "type": "object"
+        },
+        "cache-retention": {
+          "description": "How long this source's cached files stay after their last use.  Overrides 'setup.cache-retention'; 'forever' lifts a limit set there.",
+          "$ref": "#/$defs/Lifetime"
+        },
+        "cache-freshness": {
+          "description": "Freshness rules for this source's cached files, tried before 'setup.cache-freshness' and the built-in rules.  A server kind may supply these; setting them replaces the server kind's.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FreshnessRule"
+          }
+        },
+        "cache-size": {
+          "description": "The most this source's repository folder in the cache may hold, such as '5 GiB', within 'setup.cache-size'.  Two bindings reading one repository share its folder, and each enforces its own cap when it fetches.",
+          "$ref": "#/$defs/ByteSize"
+        },
+        "unknown-publish-time": {
+          "description": "Overrides 'setup.unknown-publish-time' for this repository.  Per-source because the answer is a property of the repository rather than of the run: a mirror reporting no timestamps and a registry reporting them all sit in the same configuration, and one global answer would be wrong for one of them.",
+          "$ref": "#/$defs/UnknownPublishTime"
+        },
+        "dependencies": {
+          "description": "Which dependencies to follow when '--dependencies' is absent or 'default', in the flag's syntax: 'runtime+dev', 'all', 'all+shallow', 'none'.  Absent means 'none'.\n\nFor a proxy, the proxy's setting governs the whole walk, including what its upstreams serve; theirs is not consulted.",
+          "type": "string"
+        },
+        "proxy-to": {
+          "title": "Proxied Sources",
+          "description": "The sources this proxy stands in front of, in precedence order.\n\nOnly a built-in proxy kind may carry this; a kind naming an entry in 'extensions' is never a proxy, because the loader has to know whether this key is meaningful before it builds anything and asking an extension would mean running it to find out.\n\nA proxy may use the order (how to search), the classifiers (which upstream is responsible for what), or neither.  Classifiers are optional and need not be unique; a proxy that requires otherwise says so and reports it at startup.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProxyTo"
+          }
+        },
+        "override-template": {
+          "description": "Take precedence over an entry of the same name that 'servers' or 'repositories' generate.  Without it, such a collision is a configuration error.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "allOf": [
+        {
+          "title": "A source names a host, or proxies to others",
+          "anyOf": [
+            {
+              "required": [
+                "host"
+              ]
+            },
+            {
+              "required": [
+                "proxy-to"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "A proxy has no host of its own",
+          "not": {
+            "required": [
+              "host",
+              "proxy-to"
+            ]
+          }
+        }
+      ],
+      "required": [
+        "kind"
+      ]
+    },
+    "Target": {
+      "title": "Target Repository",
+      "description": "Description of a target repository.  TODO switch to a 'oneOf', which includes using an extension point reference.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "kind"
+      ],
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "host": {
+          "$ref": "#/$defs/NamedReference"
+        },
+        "host-path": {
+          "description": "Where under the host this repository lives, joined onto the host's url to give the root this target writes to.  The writing half of a source's 'host-path': a repository manager hosts many repositories on one server, and reading from one and writing to another should not need two host entries describing the same server twice.\n\nRead when the 'copy' sub-command lands.  Nothing opens a target yet, so this is checked here and applied by nothing.  It is present rather than added later because a configuration that reads from and writes to one manager cannot otherwise be written at all.\n\nLeading and trailing slashes are optional.  '.' and '..' segments are refused.",
+          "type": "string",
+          "examples": [
+            "repository/maven-releases"
+          ]
+        },
+        "kind": {
+          "title": "Target Kind",
+          "description": "Which implementation writes to this repository.  Same resolution rules as a source kind.",
+          "$ref": "#/$defs/Kind"
+        },
+        "enumerator": {
+          "$ref": "#/$defs/NamedReference"
+        },
+        "omit": {
+          "description": "Files and whole artifacts to leave out, on top of the ecosystem's built-in omissions (checksum sidecars, and for Maven 'maven-metadata.xml' and '_remote.repositories').  A rule with only 'files' leaves matching files out of every artifact; one with only 'purl' leaves out whole artifacts; one with both leaves matching files out of matching artifacts.  Rules only ever omit more: nothing brings back a built-in omission.\n\nOn a source, an omitted file is never fetched, and an omitted artifact never resolves.  On an enumerator, it is not recorded.  On a target, it is fetched and verified as usual and never uploaded, for a target that refuses a repository's own checksum files.  An omission governs an artifact's files, not the documents a source reads to learn them: omitting 'maven-metadata.xml' or '*.pom' does not stop the Maven source fetching either.\n\nEach file a rule leaves out is reported as 'file-omitted' (ignored by default) and each artifact as 'artifact-omitted' (a warning); a target records the artifact as refused.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OmitRule"
+          }
+        },
+        "options": {
+          "description": "Options for this entry, interpreted by its kind.  See a source's options for the well-known 'repository' and 'ecosystem' keys.\n\nThe 'npm' kind reads 'dist-tags', which decides whether a publish asserts the package's 'latest' tag:\n\n  never      - the default.  Send no dist-tags at all; the tag stays the target's business, exactly as 'maven-metadata.xml' does.  A package the mirror did not already have then has no 'latest', so 'npm install NAME' does not resolve until somebody runs 'npm dist-tag'.  That failure is visible and takes one command to fix, which is why it is the default: every other mode can write a tag that is wrong and looks right.\n  on-create  - set 'latest' when creating the package, and never move it afterwards.  A mirror that did not have the package becomes installable; one that did keeps whatever its operator chose.  Note that several versions of a new package copied in one run are created concurrently, so the tag lands on whichever upload went first - which may be the oldest.\n  highest    - keep 'latest' on the highest version the mirror holds.  Predictable and order-independent, and it overrules a publisher who deliberately pinned 'latest' lower (which 'npm dist-tag add foo@1.9.5 latest' after a bad 2.0 makes routine).\n\nnpm publishes no specification requiring a publish to set this, so which is right depends on what the mirror is for.\n\nThe 'npm' kind also reads 'registry-fields', which decides whether a copied manifest keeps the keys its origin registry wrote into it ('_npmUser', '_npmOperationalInternal', '_resolved', '_from', '_integrity', '_shasum', '_rev', '_attachments'):\n\n  drop  - the default.  They describe the origin registry, not the package.\n  keep  - keep them, for a mirror that wants the origin's record.\n\nThe manifest itself is the origin's version document when the source serves one, else the tarball's package.json, so the target serves the package's dependencies.\n\nThe 'maven' kind reads 'checksums' and 'metadata'.  'checksums' names the sidecars written beside each file, computed from the copied bytes, spelled as a source's 'checksums' and defaulting to ['sha1', 'md5']; an empty list writes none.  A signature file gets no checksum.  'metadata' decides who keeps 'maven-metadata.xml':\n\n  server  - the default.  Write nothing; Nexus and Artifactory rebuild it on upload.\n  merge   - read the target's document, add the version, and write it back, with a snapshot's own build index.  For a repository served as plain files.  Only the version list is rewritten; the rest of the document is kept.\n\n'overwrite-guard' decides who keeps a written path from being replaced:\n\n  server  - the default.  Rely on the server refusing a rewrite (Nexus 400, Artifact Keeper 409); a refusal is answered by comparing what it holds.\n  check   - compare what the target holds before writing, one request per file: small files by their bytes, larger ones by the target's '.sha1'.  Different bytes refuse the artifact with nothing written, and a file already holding the same bytes is skipped.  For a server that overwrites and reports success, such as Artifactory OSS as admin.\n\nThe 'artifactory-generic' kind reads 'repository' (required), 'mapping', and 'overwrite-guard'.  'mapping' is spelled as a raw source's and defaults to 'directory'.  'overwrite-guard' defaults to 'check' here, because Artifactory replaces a path silently for an account allowed to overwrite; 'server' sends without looking and answers a refusal (403) by comparing what it holds.\n\nThe 'nexus-raw' kind reads 'repository' (required), 'mapping', 'overwrite-guard', and 'upload-group-size'.  'mapping' is spelled as a raw source's and defaults to 'directory'.  'overwrite-guard' is spelled as the 'maven' kind's: 'server', the default, relies on Nexus refusing a rewrite (400 under writePolicy ALLOW_ONCE) and answers a refusal by comparing what it holds; 'check' compares before writing, for writePolicy ALLOW, which replaces a path silently.  'upload-group-size' caps the files one upload request carries, as a byte count or a size such as '50 MiB' (the default); a larger file goes alone.  A repository whose format is not raw takes one PUT per file instead, which its format may refuse.\n\nThe 'artifact-keeper-generic' kind reads 'repository' (required), 'mapping', and 'overwrite-guard'.  'mapping' is spelled as a raw source's and defaults to 'directory'.  'overwrite-guard' is spelled as the 'maven' kind's: 'server', the default, relies on Artifact Keeper refusing a rewrite (409) and answers a refusal by comparing what it holds; a repository with versioning enabled accepts the rewrite instead, keeping the old bytes as a revision.  'check' compares before writing, so a path is never replaced.  The artifact's version, when it has one, labels the revision.\n\nThe 'local-directory' kind writes raw files into a directory on this machine, through a 'file://' host.  It reads 'mapping' and 'overwrite-guard'.  'mapping' is spelled as a raw source's and defaults to 'directory'.  'overwrite-guard' defaults to 'check', comparing every file before writing any; a file is never replaced either way.\n\nThe 'pypi' kind reads 'upload-path', 'legacy-dists', and 'attestations'.  'upload-path' is where uploads are posted, relative to 'host-path' and defaulting to it: Nexus and Artifact Keeper take uploads at the index root; an index with a separate upload endpoint names it here.  '.' and '..' segments are refused.  'legacy-dists' decides what happens to a distribution that is neither a wheel nor an sdist ('.egg', '.exe', '.msi'), which PyPI no longer accepts and an old server may:\n\n  error  - the default.  Refuse the artifact before any of it is uploaded.\n  skip   - upload the wheels and sdists, and report each file left behind as 'distribution-type-unsupported'.\n  guess  - upload it under the filetype its extension suggests, and let the server decide.\n\n'attestations' decides whether a file's PEP 740 attestations travel with it:\n\n  forward  - the default.  Fetch the provenance object the source's index names and send its attestations in the upload.  Nexus and Artifact Keeper accept them and keep nothing.\n  drop     - fetch and send none.  For pypi.org, which refuses attestations unless the upload itself comes through Trusted Publishing.\n\nThe 'nexus-raw' and 'artifact-keeper-generic' kinds read 'max-listing-rows', spelled as a source's, for the listing that checks whether an artifact is already there.",
+          "type": "object"
+        },
+        "override-template": {
+          "description": "Take precedence over an entry of the same name that 'servers' or 'repositories' generate.  Without it, such a collision is a configuration error.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "Enumerator": {
+      "title": "Artifact Enumerator",
+      "description": "Enumerates the artifacts a repository holds.\n\nExactly one of 'host' or 'proxy-to' is required, and never both - the same rule a source follows, for the same reason.  A proxy enumerator has no host of its own; its I/O happens in the enumerators it stands in front of.\n\nA full walk of proxied enumerators follows the FAILOVER pattern only: it enumerates the first upstream that can start and does NOT merge the catalogs.  To walk two repositories joined together, run 'inspect' against each, merge the reports, and use the merged report as an enumerator source.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "host": {
+          "description": "Where this repository lives.  Required for every enumerator but a proxy, and forbidden for a proxy.",
+          "$ref": "#/$defs/NamedReference"
+        },
+        "host-path": {
+          "description": "Where under the host this enumerator's catalog lives, joined onto the host's url.  See a source's 'host-path'.\n\nAbsent for a repository manager ('nexus', 'artifactory'), whose catalog is a REST API at the server root with the repository named in 'options'.  Present for an index rooted under the server, such as Artifact Keeper's 'pypi/{repo}', so the enumerator shares the server's host instead of needing its own.\n\nLeading and trailing slashes are optional.  '.' and '..' segments are refused.",
+          "type": "string",
+          "examples": [
+            "pypi/pypi-a"
+          ]
+        },
+        "kind": {
+          "title": "Enumerator Kind",
+          "description": "How to enumerate the repository.  Separate from a source kind because enumeration is a different capability from resolution: Maven Central speaks the Maven protocol perfectly well and cannot be enumerated over it at all.\n\nBuilt-in: 'maven-html-index' walks directory-autoindex HTML in Maven layout and is host-agnostic, listing every version a directory holds, snapshots and versions its maven-metadata.xml omits included, and takes the option 'page-size' (versions per page, default 100); 'pypi-simple' is the PEP 691 index, which lists every project in one response and so yields an exact total; 'npm-replicate' pages a CouchDB changes feed for names and reads each name's packument from the option 'registry' (default: the feed's own url, which the host or its 'additional-hosts' must reach), and takes 'page-size' (names per page, default 100); 'nexus', 'artifactory' (Pro), 'artifactory-oss', and 'artifact-keeper' read that product's own API, list every version with its files, and take the options 'repository' and 'ecosystem'; 'artifact-keeper' also takes 'mode', where 'proxy' or 'proxy-cache' reads a Remote repository's cache layout and refuses 'last-download: stats'; 'local-directory' walks a directory on this machine through a 'file://' host, laid out by the option 'mapping', without hashing what it lists.  The two Artifactory kinds query AQL, which needs a login even on an anonymously readable repository; without one, use the repository's native protocol enumerator.  Note that Maven Central's terms of service prohibit catalog enumeration, so do not point 'maven-html-index' at repo1.maven.org.\n\nAny other value names an entry in 'extensions'.",
+          "$ref": "#/$defs/Kind"
+        },
+        "omit": {
+          "description": "Files and whole artifacts to leave out, on top of the ecosystem's built-in omissions (checksum sidecars, and for Maven 'maven-metadata.xml' and '_remote.repositories').  A rule with only 'files' leaves matching files out of every artifact; one with only 'purl' leaves out whole artifacts; one with both leaves matching files out of matching artifacts.  Rules only ever omit more: nothing brings back a built-in omission.\n\nOn a source, an omitted file is never fetched, and an omitted artifact never resolves.  On an enumerator, it is not recorded.  On a target, it is fetched and verified as usual and never uploaded, for a target that refuses a repository's own checksum files.  An omission governs an artifact's files, not the documents a source reads to learn them: omitting 'maven-metadata.xml' or '*.pom' does not stop the Maven source fetching either.\n\nEach file a rule leaves out is reported as 'file-omitted' (ignored by default) and each artifact as 'artifact-omitted' (a warning); a target records the artifact as refused.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OmitRule"
+          }
+        },
+        "options": {
+          "description": "Enumerator options.  See the corresponding kind for the available values.\n\nThe 'artifactory' and 'artifactory-oss' kinds read 'anonymous': 'refuse' (the default) refuses a host with no 'authentication' before the walk, and 'attempt' sends the queries anyway, for a release that allows anonymous AQL.\n\nThe 'artifact-keeper' kind reads 'last-download': 'unknown' (the default) reports no usage, and 'stats' asks the server for each file's last download, at one request per file.",
+          "type": "object"
+        },
+        "cache-retention": {
+          "description": "How long this enumerator's cached files stay after their last use.  Overrides 'setup.cache-retention'; 'forever' lifts a limit set there.",
+          "$ref": "#/$defs/Lifetime"
+        },
+        "cache-freshness": {
+          "description": "Freshness rules for this enumerator's cached files, tried before 'setup.cache-freshness' and the built-in rules.  A server kind may supply these; setting them replaces the server kind's.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/FreshnessRule"
+          }
+        },
+        "cache-size": {
+          "description": "The most this enumerator's repository folder in the cache may hold, such as '5 GiB', within 'setup.cache-size'.  Two bindings reading one repository share its folder, and each enforces its own cap when it fetches.",
+          "$ref": "#/$defs/ByteSize"
+        },
+        "proxy-to": {
+          "title": "Proxied Enumerators",
+          "description": "The enumerators this proxy stands in front of, in precedence order.\n\nThe entries name ENUMERATORS, not sources: enumeration is a different capability from resolution, so the two proxy lists are not interchangeable even when they describe the same repositories.\n\nOnly a built-in proxy kind may carry this.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProxyToEnumerator"
+          }
+        },
+        "override-template": {
+          "description": "Take precedence over an entry of the same name that 'servers' or 'repositories' generate.  Without it, such a collision is a configuration error.",
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "allOf": [
+        {
+          "title": "An enumerator names a host, or proxies to others",
+          "anyOf": [
+            {
+              "required": [
+                "host"
+              ]
+            },
+            {
+              "required": [
+                "proxy-to"
+              ]
+            }
+          ]
+        },
+        {
+          "title": "A proxy has no host of its own",
+          "not": {
+            "required": [
+              "host",
+              "proxy-to"
+            ]
+          }
+        }
+      ],
+      "required": [
+        "kind"
+      ]
+    },
+    "Advisor": {
+      "title": "Advisory Source",
+      "description": "A source of known-vulnerability and known-malware records.  Each kind downloads a corpus once, caches it, and answers lookups locally, so screening costs a map hit per artifact rather than a request.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "host"
+      ],
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "host": {
+          "description": "Where the corpus is fetched from, and whose cache directory under 'setup.cache-dir' keeps it between runs.  Its url replaces the published location, so a mirror is a host entry.  For 'osv-offline' the published location is https://osv-vulnerabilities.storage.googleapis.com/.  For 'ossf-malicious' it is https://github.com/, which redirects to codeload.github.com, so that host lists 'codeload.github.com' under 'additional-hosts'.  Required even with 'path', which still reads through the host's cache.",
+          "$ref": "#/$defs/NamedReference"
+        },
+        "path": {
+          "description": "An archive on disk to read instead of fetching, for an air-gapped run or a corpus mirrored by something else.  A zip: for 'osv-offline' an OSV 'all.zip', for 'ossf-malicious' a zip of the repository.  A missing file fails rather than falling back to the network.",
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "description": "Options for this entry, interpreted by its kind.\n\nThe 'ossf-malicious' kind reads 'repository' (default 'ossf/malicious-packages') and 'branch' (default 'main'), for an organization maintaining its own additions to the feed.",
+          "type": "object"
+        },
+        "kind": {
+          "title": "Advisor Kind",
+          "description": "Which advisory corpus this is.  Built-in: 'osv-offline' reads the per-ecosystem all.zip from the OSV storage bucket, and because OSV aggregates 19+ upstream databases including the GitHub Advisory Database, the PyPI Advisory Database and OpenSSF Malicious Packages, that one source covers both vulnerabilities and malware; 'ossf-malicious' reads the ossf/malicious-packages repository directly, deliberately redundant with the first because OSV ingestion can lag and malicious packages are yanked from registries quickly.\n\nAny other value names an entry in 'extensions'.",
+          "$ref": "#/$defs/Kind"
+        },
+        "ttl": {
+          "description": "How long a cached corpus stays usable before a refresh is attempted.",
+          "$ref": "#/$defs/Duration"
+        },
+        "ecosystems": {
+          "description": "Which ecosystems to screen.  Omit or leave empty for all of them.  'osv-offline' downloads only these; a corpus holding several ecosystems, such as 'ossf-malicious' or a supplied 'path', is narrowed to these as it is read.",
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/Kind"
+          }
+        }
+      }
+    },
+    "Kind": {
+      "title": "Kind",
+      "description": "Names an implementation: a built-in first, then an entry in the top-level 'extensions' collection.  Deliberately not an enumeration, so that a user-supplied extension is named exactly the way a built-in is.  Because of that this schema cannot reject a misspelling - validate-config resolves every kind and reports the alternatives.",
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9._-]+$",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "ByteSize": {
+      "title": "Byte Size",
+      "oneOf": [
+        {
+          "description": "A count of bytes.",
+          "type": "integer",
+          "minimum": 0
+        },
+        {
+          "description": "A number followed by a unit, one of 'b' or 'byte' or 'bytes', 'kb', 'kib' or 'k', 'mb', 'mib' or 'm', 'gb', 'gib' or 'g'.  Decimal and binary units differ: 'kb' is 1000 and 'kib' is 1024.  The number can only be an integer, but can use '_' as a place separator.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      ]
+    },
+    "Extension": {
+      "title": "Configured Extension",
+      "description": "A configured extension, for use with one of the other settings.",
+      "oneOf": [
+        {
+          "title": "Executable",
+          "description": "Command-line executable",
+          "required": [
+            "kind",
+            "command",
+            "arguments"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "$comment": {
+              "$ref": "#/$defs/Comment"
+            },
+            "$comments": {
+              "$ref": "#/$defs/Comments"
+            },
+            "kind": {
+              "type": "string",
+              "const": "executable"
+            },
+            "command": {
+              "$ref": "#/$defs/Command"
+            },
+            "arguments": {
+              "type": "array",
+              "minLength": 0,
+              "maxLength": 100,
+              "items": {
+                "description": "An argument to pass to the executable.  Use `${}` formatting to specify a value to replace with an allowed pass-through value.  See the corresponding kind for the list of available values.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "title": "WASM",
+          "description": "A WebAssembly core module, run in-process.  It reaches the network only through the host named by the source that uses it, and is granted no files, environment, or clock beyond what WASI requires.  Only the 'source' point runs one so far.",
+          "required": [
+            "kind",
+            "module"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "$comment": {
+              "$ref": "#/$defs/Comment"
+            },
+            "$comments": {
+              "$ref": "#/$defs/Comments"
+            },
+            "kind": {
+              "type": "string",
+              "const": "wasm"
+            },
+            "module": {
+              "description": "The compiled '.wasm' module.",
+              "$ref": "#/$defs/ConfigRelativePath"
+            }
+          }
+        }
+      ]
+    },
+    "Mirror": {
+      "title": "Mirror",
+      "description": "A copy of a host, read before it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "url": {
+          "description": "Replaces the host's url in each mirrored request.",
+          "type": "string",
+          "pattern": "^https?://"
+        },
+        "skip": {
+          "description": "Paths below the host's url never asked of this mirror, with '*' and '?' wildcards.  '*/' sends directory indexes straight to the host.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "AdditionalHost": {
+      "title": "Additional Host",
+      "description": "Another host a host's reads may reach.  Exactly one of 'host' and 'hostname'.  Credentials go here only when this entry says so: a named host's own, 'inherit-parent-authentication', or 'authentication'.",
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "host"
+          ]
+        },
+        {
+          "required": [
+            "hostname"
+          ]
+        }
+      ],
+      "not": {
+        "required": [
+          "authentication",
+          "inherit-parent-authentication"
+        ],
+        "properties": {
+          "inherit-parent-authentication": {
+            "const": true
+          }
+        }
+      },
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "host": {
+          "description": "An entry in 'hosts', reached at its url with its own TLS setting, retry plan, and credentials.",
+          "$ref": "#/$defs/NamedReference"
+        },
+        "hostname": {
+          "description": "A bare hostname, reached over https with the default TLS setting and retry plan, and no credentials.  A host reached over plain http goes in 'host' instead.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$"
+        },
+        "inherit": {
+          "description": "Use the owning host's TLS setting and retry plan instead of this entry's own.  Never its credentials.",
+          "type": "boolean"
+        },
+        "inherit-parent-authentication": {
+          "description": "Send the owning host's credentials here too.  Replaces a named host's own.",
+          "type": "boolean"
+        },
+        "authentication": {
+          "description": "Credentials for this host alone.  Replaces a named host's own.",
+          "$ref": "#/$defs/Authentication"
+        }
+      }
+    },
+    "Host": {
+      "title": "Repository Host",
+      "description": "Description of a repository host.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "url"
+      ],
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "url": {
+          "$ref": "#/$defs/Url"
+        },
+        "insecure-transport": {
+          "description": "Accept 'http://', without TLS, for this host's url, its mirrors, and its keyservers.  False by default, and a configuration naming an 'http://' url on a host without it is refused.  Anything that can see or alter the connection then sees every credential sent and can supply every checksum and signature this tool reads; set it only for a host on a network you trust.",
+          "type": "boolean",
+          "default": false
+        },
+        "tls-verify": {
+          "description": "Verify the host's TLS certificate chain and hostname.  Turn this off only for a private mirror presenting a self-signed or internally-issued certificate, and only on a network you trust: without it, nothing distinguishes the real host from anything that can intercept the connection, and every checksum and signature this tool reads could come from the interceptor.",
+          "type": "boolean",
+          "default": true
+        },
+        "connect-timeout": {
+          "$ref": "#/$defs/Duration"
+        },
+        "request-timeout": {
+          "$ref": "#/$defs/Duration"
+        },
+        "retry": {
+          "$ref": "#/$defs/Retry"
+        },
+        "license-policy": {
+          "description": "License policy for this host, overriding the setup default.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "security-policy": {
+          "description": "Vulnerability and malware policy for this host, overriding the setup default.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "quarantine-policy": {
+          "description": "Per-artifact overrides of how quarantine issues are handled.  The third policy file, beside the license and security ones: nothing keyed by an artifact belongs in this configuration, so exceptions live in a file that can be reviewed on its own and carry its justification.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "signing-policy": {
+          "description": "Signing policy for this host, overriding the setup default.",
+          "$ref": "#/$defs/ConfigRelativePath"
+        },
+        "maximum-concurrent-downloads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "maximum-concurrent-uploads": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "authentication": {
+          "$ref": "#/$defs/Authentication"
+        },
+        "additional-hosts": {
+          "description": "Other hosts this host's reads may reach, by a link or by a redirect.  pypi.org lists its files on 'files.pythonhosted.org', and github.com answers an archive with a redirect to 'codeload.github.com'.  Reads only: nothing is ever written to an additional host, and a write is never redirected outside its own prefix.  Not transitive: a named host's own additional hosts are not reached through this one.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AdditionalHost"
+          }
+        },
+        "mirrors": {
+          "description": "Copies of this host asked first for each file read, in order.  A read under this host's url goes to each mirror with the url rewritten, and on to the next, then to this host, when the mirror lacks the file, is unreachable, or redirects.  Mirrors are anonymous and use this host's TLS setting and retry plan.  Writes and HEAD requests never go to a mirror.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Mirror"
+          }
+        },
+        "signing-keys": {
+          "description": "Names from the top-level 'signing-keys' collection whose keys this host's signatures are checked against.  Naming any REPLACES the registry's own key endpoint for this host rather than adding to it: the endpoint is consulted only when nothing is pinned, because a user pins keys precisely when that endpoint is gone or not to be trusted.  A registry that rotates to a key not listed reports 'signature-missing' naming the unknown key, so the substitution is never silent.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9._-]+$"
+          },
+          "uniqueItems": true
+        },
+        "keyservers": {
+          "description": "Overrides 'setup.keyservers' for this host.  Per-host because reachability is: an air-gapped mirror and a public registry sit in the same configuration, and one of them has no keyserver to ask.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "uri",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "override-template": {
+          "description": "Take precedence over an entry of the same name that 'servers' or 'repositories' generate.  Without it, such a collision is a configuration error.",
+          "type": "boolean",
+          "default": false
+        },
+        "options": {
+          "description": "Settings for the client the url's scheme selects.  Only a 'file://' host, a local directory, takes any: 'symlinks' is how a symbolic link inside it is treated, one of 'as-file' (the default: the link reads as a file holding its target text), 'follow', 'skip', or 'within-root' (followed only while it stays inside the directory).  A network host takes none.",
+          "type": "object"
+        }
+      }
+    },
+    "Authentication": {
+      "title": "Authentication",
+      "description": "Mechanism for authenticating with a host.",
+      "oneOf": [
+        {
+          "title": "Basic HTTP Authentication",
+          "description": "Log in to the URL using basic HTTP authentication.  Credentials pass in plain text, so be sure to use with a secure connection.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "basic"
+            },
+            "username": {
+              "$ref": "#/$defs/SecretValue"
+            },
+            "password": {
+              "$ref": "#/$defs/SecretValue"
+            }
+          }
+        },
+        {
+          "title": "Bearer Token",
+          "description": "Log in to the URL using a bearer token.  The requests pass the token as-is, so be sure to use with a secure connection.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "const": "bearer"
+            },
+            "token": {
+              "$ref": "#/$defs/SecretValue"
+            },
+            "header": {
+              "type": "string",
+              "default": "Authorization"
+            },
+            "prefix": {
+              "type": "string",
+              "default": "Bearer "
+            }
+          }
+        }
+      ]
+    },
+    "SecretValue": {
+      "title": "Value Source",
+      "description": "The value or method for finding the value.",
+      "oneOf": [
+        {
+          "title": "Text",
+          "description": "In-line text value.",
+          "type": "object",
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "value": {
+              "type": "string",
+              "maxLength": 5000
+            }
+          }
+        },
+        {
+          "title": "Environment Variable",
+          "description": "Value in the environment variables.",
+          "type": "object",
+          "required": [
+            "kind",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "env"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            }
+          }
+        },
+        {
+          "title": "AWS Secrets Manager String",
+          "description": "Value from AWS Secrets Manager.  Credentials and region come from the AWS default chain unless 'region' or 'profile' is given.",
+          "type": "object",
+          "required": [
+            "kind",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "aws-secret"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            },
+            "region": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            },
+            "profile": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            }
+          }
+        },
+        {
+          "title": "AWS Secrets Manager Key",
+          "description": "Value from AWS Secrets Manager JSON-encoded secret.  A number or boolean value becomes its JSON text.  Credentials and region come from the AWS default chain unless 'region' or 'profile' is given.",
+          "type": "object",
+          "required": [
+            "kind",
+            "name",
+            "key"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "aws-secret-key"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            },
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            },
+            "region": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            },
+            "profile": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            }
+          }
+        },
+        {
+          "title": "Property File",
+          "description": "One entry of a '.env'-style property file.  THE FILE IS THE ONLY SOURCE: unlike ordinary .env tooling, the process environment is never consulted, neither to override the file nor to supply a key the file omits.  A configuration that resolved differently depending on the surrounding environment would not be reproducible, and anything able to set a variable could substitute a credential.  A missing file, or a missing key within it, is an error naming what was looked for.  Format: 'KEY=value', an optional leading 'export ', '#' or '!' comments, and optional matching quotes around the value.  No '${OTHER}' interpolation, which would be a way for the environment back in.",
+          "type": "object",
+          "required": [
+            "kind",
+            "key"
+          ],
+          "oneOf": [
+            {
+              "required": [
+                "config-relative-path"
+              ]
+            },
+            {
+              "required": [
+                "working-dir-path"
+              ]
+            }
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "property-file"
+            },
+            "working-dir-path": {
+              "$ref": "#/$defs/WorkingDirPath"
+            },
+            "config-relative-path": {
+              "$ref": "#/$defs/ConfigRelativePath"
+            },
+            "key": {
+              "description": "The property name to read.  The last definition in the file wins, as a shell sourcing the same file would read it.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "SigningKey": {
+      "title": "Signing Key",
+      "description": "A public key held in configuration rather than fetched from a registry.  For keys known in advance, and for repositories whose key endpoint or PKI no longer runs - the signatures remain good, but there is nowhere left to ask.  A pinned key is also the stronger arrangement where the endpoint does run, since a key fetched from the same host that serves the artifacts vouches for rather less than one a user placed deliberately.",
+      "type": "object",
+      "required": [
+        "scheme",
+        "key-id",
+        "value",
+        "expires"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "scheme": {
+          "description": "Which signature scheme this key verifies.  Closed, unlike an extension 'kind': a scheme is a verifier compiled into the tool.",
+          "enum": [
+            "npm-ecdsa",
+            "pgp"
+          ]
+        },
+        "key-id": {
+          "description": "The identifier a signature names - an npm 'keyid' such as 'SHA256:jl3bwswu80PjjokCgh0o2w5c2U4LhQAE57gj9cz1kzA', or a PGP key id or fingerprint.  Matching is on this value, so the order of the collection carries no meaning.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "value": {
+          "description": "The public key itself.  A secret value, so the material may live outside the config file - in an environment variable, or in a secret manager that holds it encrypted at rest.  A public key need not be hidden, but an organization managing its trust anchors should not have to make an exception for this one.",
+          "$ref": "#/$defs/SecretValue"
+        },
+        "citation-url": {
+          "description": "Where this key came from, so a reviewer can verify the value independently - the publisher's announcement, a keyserver entry, an archived page.  A CITATION, NOT A LOOKUP: it is never fetched.  Fetching it would defeat the purpose twice over, since these keys exist because the network source is gone or untrusted, and re-fetching would turn a pinned trust anchor back into whatever that URL serves today.",
+          "type": "string",
+          "format": "uri",
+          "minLength": 1
+        },
+        "expires": {
+          "title": "Expiry",
+          "description": "When this key stops being trusted: an RFC 3339 timestamp, or the word 'never'.  A signature made after this is reported rather than accepted.  The scheme's own expiry, where it has one, still applies; the earlier wins.\n\nRequired, and 'never' has to be written out.  A trust anchor with no end date should be a decision somebody made and wrote down, not what happens when a field is left out.  validate-config reports keys whose expiry has already passed.",
+          "type": "string",
+          "anyOf": [
+            {
+              "title": "Deliberately never lapses",
+              "const": "never"
+            },
+            {
+              "title": "Lapses on a date",
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+            }
+          ]
+        }
+      }
+    },
+    "UnknownPublishTime": {
+      "title": "Unknown Publish Time",
+      "description": "What to do about an artifact whose publish time a repository does not report, when 'minimum-publish-time' is configured.  Only consulted when a window is set; with no window, publish time is not being asked about at all.  'refuse' is the stricter reading and the default - the window exists to keep very new artifacts out, and treating 'no timestamp' as 'old enough' admits exactly what it was turned on to exclude.  'allow' is for a repository known not to report publish times, where refusing would refuse everything.",
+      "enum": [
+        "allow",
+        "refuse"
+      ],
+      "default": "refuse"
+    },
+    "ProxyTo": {
+      "title": "Proxied Source",
+      "description": "One source a proxy stands in front of: either a reference to a declared source, or a source described in place.\n\nA 'ref' must name a NON-PROXY source; only an inline 'source' may itself be a proxy.  That single rule is the whole of the cycle prevention: inline definitions nest structurally and cannot close a loop, and names - which could - are not allowed to reach another proxy.\n\nA 'ref' is shared, not copied: two proxies naming the same source get the same instance, and therefore the same caches.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "ref": {
+          "description": "Names an entry in the top-level 'sources' collection.  That entry must not itself be a proxy.",
+          "$ref": "#/$defs/NamedReference"
+        },
+        "source": {
+          "description": "A source described here and nowhere else.  This one MAY be a proxy, because an inline definition cannot refer back to anything containing it.",
+          "$ref": "#/$defs/Source"
+        },
+        "classifier": {
+          "title": "Upstream Classifier",
+          "description": "Which responsibility this upstream has, for a proxy that assigns any - 'this one is releases, that one is snapshots'.  Optional, and not unique across the list unless a particular proxy requires it.  A proxy that ignores classifiers is the common case.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "oneOf": [
+        {
+          "title": "A reference to a declared source",
+          "required": [
+            "ref"
+          ]
+        },
+        {
+          "title": "A source described in place",
+          "required": [
+            "source"
+          ]
+        }
+      ]
+    },
+    "ProxyToEnumerator": {
+      "title": "Proxied Enumerator",
+      "description": "One enumerator a proxy enumerator stands in front of: either a reference to a declared enumerator, or an enumerator described in place.\n\nA 'ref' must name a NON-PROXY enumerator; only an inline 'enumerator' may itself be a proxy.  That single rule is the whole of the cycle prevention, exactly as it is for sources.\n\nA 'ref' is shared, not copied.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "ref": {
+          "description": "Names an entry in the top-level 'enumerators' collection.  That entry must not itself be a proxy.",
+          "$ref": "#/$defs/NamedReference"
+        },
+        "enumerator": {
+          "description": "An enumerator described here and nowhere else.  This one MAY be a proxy.",
+          "$ref": "#/$defs/Enumerator"
+        },
+        "classifier": {
+          "title": "Upstream Classifier",
+          "description": "Which responsibility this upstream has, for a proxy that assigns any.  Optional, and not unique across the list unless a particular proxy requires it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        }
+      },
+      "oneOf": [
+        {
+          "title": "A reference to a declared enumerator",
+          "required": [
+            "ref"
+          ]
+        },
+        {
+          "title": "An enumerator described in place",
+          "required": [
+            "enumerator"
+          ]
+        }
+      ]
+    },
+    "ProblemClass": {
+      "title": "Problem Class",
+      "description": "How one problem code is handled.\n\n  allowed - record it and carry on.  Not a quarantine.\n  soft    - take the artifact and flag it for review.\n  hard    - hold the artifact back, reviewably.\n  failure - not up for review, and it fails.\n\nTwo of the four are not quarantine values: 'allowed' means carry on and say so, and 'failure' means this is not up for review.  Only 'soft' and 'hard' put an artifact on the quarantine list.\n\n'failure' never weakens a code: one that already aborts keeps aborting, because asking for something to be a failure is not asking for it to become a smaller one.\n\nNone of these decides the exit code.  Holding an artifact back and failing the run are different questions, and the second depends on whether the artifact was one you named or one the tool reached on its own.",
+      "type": "string",
+      "enum": [
+        "allowed",
+        "soft",
+        "hard",
+        "failure"
+      ]
+    },
+    "RepositoryAccess": {
+      "title": "Repository Access",
+      "description": "What the repository is used for.  'read' generates its source and enumerator, 'write' its target, and 'read-write' all three.  Absent means everything the server kind permits and its template provides.",
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "read-write"
+      ]
+    },
+    "Repository": {
+      "title": "Repository",
+      "description": "One repository on a server.  Its alias (the key) names the source, target, and enumerator it generates, so '--from' and '--to' take it directly.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "name": {
+          "description": "The repository's name on its server.  Absent means the repository's alias.",
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "title": "Repository Kind",
+          "description": "The repository's kind, as its server technology names it: 'maven2' on Nexus, 'maven' on Artifactory.  Each server kind supports the kinds it has a template for.",
+          "$ref": "#/$defs/Kind"
+        },
+        "access": {
+          "$ref": "#/$defs/RepositoryAccess"
+        },
+        "values": {
+          "description": "Values the server kind's template reads, over the server's own 'values'.  Example: 'mapping' for a raw repository.",
+          "type": "object"
+        },
+        "source": {
+          "description": "Settings deep-merged over the source the template generates.  Takes the fields of a source.",
+          "type": "object"
+        },
+        "target": {
+          "description": "Settings deep-merged over the target the template generates.  Takes the fields of a target.",
+          "type": "object"
+        },
+        "enumerator": {
+          "description": "Settings deep-merged over the enumerator the template generates.  Takes the fields of an enumerator.",
+          "type": "object"
+        },
+        "server": {
+          "description": "The server this repository belongs to.  Required for a repository in the top-level 'repositories' collection, and forbidden under a server's own 'repositories'.",
+          "$ref": "#/$defs/NamedReference"
+        }
+      }
+    },
+    "Server": {
+      "title": "Server",
+      "description": "One server, described by its technology.  Its kind's templates generate a host named for the server's alias, and a source, target, and enumerator for each of its repositories.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "$comment": {
+          "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+          "$ref": "#/$defs/Comments"
+        },
+        "kind": {
+          "title": "Server Kind",
+          "description": "The server technology, naming a template.  Built-in: 'nexus3', 'artifactory-pro', 'artifactory-oss', 'artifact-keeper', 'local-directory', 'public-pypi.org', 'maven-central', 'npmjs'.  'setup.server-kinds-dir' adds more or replaces these.",
+          "$ref": "#/$defs/Kind"
+        },
+        "url": {
+          "description": "The server's url.  Replaces any url the kind supplies; required for a kind that supplies none.",
+          "type": "string"
+        },
+        "insecure-transport": {
+          "description": "Accept an 'http://' url for this server.  Passed to the host the server generates, replacing any value its kind's template sets; see the host's 'insecure-transport'.",
+          "type": "boolean",
+          "default": false
+        },
+        "authentication": {
+          "description": "The credentials for every request to this server.  A template never supplies these.",
+          "$ref": "#/$defs/Authentication"
+        },
+        "retry": {
+          "description": "Retry rules merged over the kind's defaults.  An 'on-status' rule adds a status code or replaces the kind's rule for that code.",
+          "$ref": "#/$defs/Retry"
+        },
+        "values": {
+          "description": "Values the server kind's templates read.",
+          "type": "object"
+        },
+        "repositories": {
+          "title": "Server Repositories",
+          "description": "This server's repositories.  More may be declared in the top-level 'repositories' collection, naming this server.",
+          "type": "object",
+          "patternProperties": {
+            "^[a-zA-Z0-9._-]+$": {
+              "allOf": [
+                {
+                  "$ref": "#/$defs/Repository"
+                },
+                {
+                  "not": {
+                    "required": [
+                      "server"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

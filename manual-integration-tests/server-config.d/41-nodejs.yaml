@@ -1,0 +1,24 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# NodeJS releases from https://nodejs.org/dist/, read through the WASM
+# extension in `extensions/nodejs-releases`.  Build it first with
+# `make build-extensions`.  Versions are semver: `nodejs@24` picks the
+# newest 24.x.y, and `nodejs` alone the newest release.
+
+hosts:
+  nodejs-org:
+    url: https://nodejs.org/dist/
+
+extensions:
+  nodejs-releases:
+    kind: wasm
+    module: ../../extensions/nodejs-releases/target/wasm32-wasip1/release/nodejs_releases.wasm
+
+sources:
+  # Only the Linux x64 tarball, so a copy stays small; a release holds
+  # dozens of files.
+  nodejs-org:
+    host: nodejs-org
+    kind: nodejs-releases
+    options:
+      files: ["node-v*-linux-x64.tar.gz"]

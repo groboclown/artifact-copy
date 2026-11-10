@@ -1,0 +1,27 @@
+description: A local directory
+server:
+  file: server.yaml.hbs
+  values:
+    type: object
+    additionalProperties: false
+    properties:
+      symlinks:
+        description: How a symbolic link inside the directory is treated; "as-file" reads it as a file holding its target text.
+        enum: [as-file, follow, skip, within-root]
+        default: as-file
+repositories:
+  generic:
+    file: generic.yaml.hbs
+    roles: [source, target, enumerator]
+    values:
+      type: object
+      additionalProperties: false
+      properties:
+        mapping:
+          description: How raw paths become artifacts.
+          enum: [directory, as-is, name-version-file]
+          default: directory
+        overwrite-guard:
+          description: Who keeps a written file from being replaced; "check" compares every file before writing any.
+          enum: [check, server]
+          default: check

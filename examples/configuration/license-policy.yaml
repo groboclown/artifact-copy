@@ -1,0 +1,99 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/license-policy.schema.json
+
+$comment: >-
+  Permissive licenses pass, copyleft is refused, and anything unrecognized is
+  refused pending a human decision.
+
+allowed-licenses:
+  - MIT
+  - Apache-2.0
+  - BSD-2-Clause
+  - BSD-3-Clause
+  - ISC
+  - Unlicense
+
+forbidden-licenses:
+  - AGPL-3.0-only
+  - AGPL-3.0-or-later
+  - SSPL-1.0
+
+# Anything neither allowed nor forbidden stops for a human.  Erring the other
+# way would let an unreviewed license through silently.
+default-behavior: forbid
+
+# An artifact that declares nothing is the same problem.
+unknown-license: forbid
+
+# Only npm reliably declares an SPDX expression.  Maven POMs carry free text
+# and PyPI has three competing fields, most projects populating the legacy
+# free-text one, so these mappings do real work.
+aliases:
+  Apache-2.0:
+    names:
+      - The Apache Software License, Version 2.0
+      - Apache License, Version 2.0
+      - Apache License 2.0
+      - Apache 2
+      - "License :: OSI Approved :: Apache Software License"
+    urls:
+      - https://www.apache.org/licenses/LICENSE-2.0
+
+  MIT:
+    names:
+      - MIT License
+      - The MIT License
+      - "License :: OSI Approved :: MIT License"
+    urls:
+      - https://opensource.org/licenses/MIT
+
+  BSD-3-Clause:
+    names:
+      - BSD License
+      - New BSD License
+      - 3-Clause BSD License
+
+artifacts:
+  - purl: pkg:maven/com.example/legacy-lib
+    license: MIT
+    ref: https://github.com/example/legacy-lib/blob/main/LICENSE
+    reason: >-
+      The POM omits a licenses block entirely, but the repository has carried
+      a plain MIT LICENSE file since the first release.
+
+  # A package that relicensed partway through its life.  Forbidding the
+  # package outright would also refuse the 1.x releases, which are still
+  # Apache-2.0 and still fine to mirror.
+  #
+  # The pattern is a glob, not a version range, so each relicensed line needs
+  # its own entry and a new major release needs another one.
+  - purl: pkg:npm/example-relicensed@2.*
+
+    # The long form of `license`.  Only `spdx-id` decides anything; the
+    # copyright and the URIs are recorded for whoever reads this file and go
+    # no further.  In particular a URI here does *not* teach the tool to
+    # resolve that link - `aliases` above is what does that - so a note can
+    # never quietly change which artifacts are allowed.
+    license:
+      spdx-id: LicenseRef-Proprietary
+      copyright: "(c) 2023 Example Inc"
+      uris:
+        - https://example.com/licenses/proprietary-2.0.txt
+    policy: forbid
+    ref: https://example.com/blog/license-change
+    reason: >-
+      Apache-2.0 through 1.x; proprietary from 2.0 onwards.  The 1.x line is
+      unaffected and is deliberately not listed here.
+
+  # A copyleft test harness.  One allowed usage is enough to mirror the
+  # artifact -- otherwise the tests could not run -- and the runtime refusal
+  # is recorded in the report rather than lost.  Stopping it reaching a
+  # shipped runtime classpath is the build's job, not the mirror's.
+  - purl: pkg:maven/com.example/agpl-test-harness
+    usage:
+      runtime: forbid
+      dev: forbid
+      test: allow
+    ref: https://jira.example.com/browse/LEGAL-88
+    reason: >-
+      AGPL, so it must never ship.  Legal cleared it for the test classpath
+      only, where nothing is distributed.

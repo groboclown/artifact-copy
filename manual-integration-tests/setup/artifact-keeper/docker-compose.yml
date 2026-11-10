@@ -1,0 +1,185 @@
+# Artifact Keeper, cut down to the backend and its database.
+#
+# The upstream getting-started compose runs eleven services.  This runs two,
+# plus the throwaway configuration container the other servers in this tree
+# also use.  What was dropped, and why none of it is needed to exercise a
+# migration:
+#
+#   web, caddy      the UI and its reverse proxy.  Nothing here drives a
+#                   browser, and dropping Caddy means the backend is reached
+#                   directly rather than through a TLS-terminating hop.
+#   opensearch      full-text search for the UI.  `OPENSEARCH_URL` is an
+#                   Option in the backend's config, so leaving it unset
+#                   simply disables the feature.
+#   trivy, openscap vulnerability and compliance scanners.  Same story:
+#                   unset their URLs and the integrations do not register.
+#   dependency-track already opt-in upstream behind a profile, and it costs
+#                   about 4 GiB of RAM.
+#   pg-certs        generated self-signed certificates so the backend could
+#                   reach Postgres over TLS.  This connects with
+#                   `sslmode=disable` instead - see the note on DATABASE_URL.
+#   scan-workspace-init  chowned a shared enumerator volume.  With no enumerators
+#                   there is no shared volume; the backend keeps its default
+#                   workspace path inside its own filesystem.
+#
+# NEVER run this anywhere real.  There is no TLS anywhere, the database
+# password is a constant, and the whole cluster is disposable.
+#
+# Start it through `../start.sh artifact-keeper`, which generates the `.env`
+# this file requires.  Running `docker compose up` directly fails with a
+# message naming the missing variable rather than starting on a default
+# password.
+#
+# Usage:
+#   ../start.sh artifact-keeper
+#   docker compose -f docker-compose.yml logs -f configure
+
+name: artifact-copy-artifact-keeper
+
+services:
+  postgres:
+    image: public.ecr.aws/docker/library/postgres:18-alpine
+    container_name: am-ak-db
+
+    environment:
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: registry
+      POSTGRES_DB: artifact_registry
+
+    volumes:
+      # PostgreSQL 18+ places PGDATA in a subdirectory and expects the mount
+      # at /var/lib/postgresql rather than /var/lib/postgresql/data; mounting
+      # the old path makes the image refuse to start.  Taken from the
+      # upstream compose, which carries the same note.
+      #
+      # Upstream also mounts an init-db.sql here.  It only creates the
+      # Dependency-Track database, which this cluster does not run.
+      - ak-postgres-data:/var/lib/postgresql
+
+    # Not published.  Nothing outside the compose network needs the
+    # database, and publishing it would be one more port to keep clear of
+    # the other servers in this tree.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry -d artifact_registry"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+    restart: unless-stopped
+
+  backend:
+    image: ghcr.io/artifact-keeper/artifact-keeper-backend:${ARTIFACT_KEEPER_VERSION:-latest}
+    container_name: am-ak-backend
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      # `sslmode=disable`, where upstream requires TLS and generates
+      # certificates for it in an init container.  Both ends of this
+      # connection are containers on one private compose network that
+      # nothing else joins, and the certificate machinery is a third service
+      # to run and a volume to keep - cost with nothing to show for it in a
+      # throwaway rig.  It is also the one place this file is less secure
+      # than upstream, so it is stated rather than buried.
+      DATABASE_URL: postgresql://registry:registry@postgres:5432/artifact_registry?sslmode=disable
+
+      STORAGE_PATH: /data/storage
+
+      # Generated into this directory's `.env` by `../sctl.sh`.  There is
+      # no default for either: the backend refuses to start on a weak
+      # JWT_SECRET, and a server whose admin password falls back to a
+      # constant is exactly the accident this avoids.
+      JWT_SECRET: ${JWT_SECRET:?run ../sctl.sh artifact-keeper, which generates .env}
+
+      # Setting this is what skips the first-boot setup lock: the backend
+      # creates the admin with this password and leaves must_change_password
+      # clear, so the API is usable immediately (backend/src/main.rs,
+      # `decide_initial_admin_credential`).  Without it the backend writes a
+      # random password into its storage volume and locks every endpoint
+      # until someone reads it out and changes it.
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?run ../sctl.sh artifact-keeper, which generates .env}
+
+      # Set and malformed makes the backend exit at boot; absent only warns.
+      # `../sctl.sh` generates a valid one, so it is set.
+      AK_WEBHOOK_SECRET_KEY: ${AK_WEBHOOK_SECRET_KEY:?run ../sctl.sh artifact-keeper, which generates .env}
+
+      # The global anonymous switch.  Per-repository anonymous read is a
+      # property of each repository (`allow_anonymous_access`), which the
+      # configuration sets on every "a" repository; this decides whether
+      # that is honored at all.
+      AK_GUEST_ACCESS_ENABLED: "true"
+
+      ENVIRONMENT: development
+      RUST_LOG: ${RUST_LOG:-info}
+      HOST: 0.0.0.0
+      PORT: 8080
+
+    ports:
+      # Defaulted clear of Nexus (8081) and Artifactory (8082) so all three
+      # can run at once.
+      - "${ARTIFACT_KEEPER_PORT:-8083}:8080"
+
+    volumes:
+      - ak-storage:/data/storage
+
+    # Taken from upstream, which proves the image carries curl - its runtime
+    # image has no shell, so the exec form is the only one that works here.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/livez"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 10
+
+    restart: unless-stopped
+
+  configure:
+    # The same image the other two servers use, and for a reason worth
+    # keeping: it already carries `curl`, so nothing is installed at run
+    # time.
+    #
+    # This was `alpine` plus `apk add curl jq`. On a network that intercepts
+    # TLS that cannot work -- the corporate root is in the *host's* trust
+    # store, not the container's, so the package index fails to verify --
+    # and `apk add` exits having installed nothing. The container then has
+    # no `curl`, every request reports status 000, and the wait loop runs to
+    # its timeout blaming the server. Installing at run time also means the
+    # cluster only comes up when a package mirror does.
+    image: docker.io/curlimages/curl:${CURL_VERSION:-latest}
+    container_name: am-ak-configure
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    environment:
+      ARTIFACT_KEEPER_URL: http://backend:8080
+
+      ARTIFACT_KEEPER_ADMIN_USER: ${ARTIFACT_KEEPER_ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?run ../sctl.sh artifact-keeper, which generates .env}
+      PUBLISH_PASSWORD: ${PUBLISH_PASSWORD:?run ../sctl.sh artifact-keeper, which generates .env}
+      READONLY_PASSWORD: ${READONLY_PASSWORD:?run ../sctl.sh artifact-keeper, which generates .env}
+
+      PUBLISH_USER: ${PUBLISH_USER:-am-publisher}
+      READONLY_USER: ${READONLY_USER:-am-reader}
+
+      # Which repositories to create.  Artifact Keeper serves far more
+      # formats than either of the other two servers here.
+      ARTIFACT_KEEPER_FORMATS: ${ARTIFACT_KEEPER_FORMATS:-npm pypi maven docker conan generic}
+
+      WAIT_SECONDS: ${WAIT_SECONDS:-600}
+
+    volumes:
+      - ./configure.sh:/configure.sh:ro
+
+    entrypoint: ["sh", "/configure.sh"]
+
+    # It configures and exits.  Restarting it on failure would hide the
+    # failure behind a loop.
+    restart: "no"
+
+volumes:
+  ak-postgres-data:
+  ak-storage:

@@ -1,0 +1,28 @@
+# Any repository, whatever its format, read and written as raw files.
+source:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}
+    max-listing-rows: {{yaml values.max-listing-rows}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}
+target:
+  kind: artifact-keeper-generic
+  options:
+    repository: {{yaml repository.name}}
+    mapping: {{yaml values.mapping}}
+    overwrite-guard: {{yaml values.overwrite-guard}}
+    max-listing-rows: {{yaml values.max-listing-rows}}
+enumerator:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}
+    last-download: {{yaml values.last-download}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}

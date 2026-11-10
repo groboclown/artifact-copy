@@ -1,0 +1,351 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# A worked example covering every top-level collection.  Load it with
+# `artifact-copy --config=examples/config.yaml validate-config`.
+
+setup:
+  log:
+    level: info
+    output-format: ansi
+    # Relative to this configuration file.  Absent means standard error.
+    config-relative-path: artifact-copy.log
+  thread-pool-size: 8
+  cache-dir: .cache/artifact-copy
+  # A cached file nobody has used for this long is evicted and fetched
+  # again when next needed.  Absent is forever.  Overridable per source and
+  # per enumerator.
+  cache-retention: 30 days
+  # How long a cached file may be used before it is fetched again, by file
+  # name.  Tried after a binding's own rules and before the built-in ones,
+  # which keep inventory documents such as maven-metadata.xml an hour and
+  # everything else forever.
+  cache-freshness:
+    - files: "maven-metadata.xml*"
+      fresh-for: 15 minutes
+  # The most the whole cache directory may hold.  Past it, the least
+  # recently used files go first.  A source or enumerator may also cap its
+  # own repository's folder with 'cache-size'.
+  cache-size: 20 GiB
+  # When a repository does not report an artifact's publish time and a
+  # publish window is configured, is the artifact allowed through?
+  #
+  # 'refuse' is the default and the stricter reading: an artifact that
+  # cannot be shown to be old enough is skipped.  Overridden per source
+  # below, because whether timestamps exist is a property of the repository
+  # rather than of the run.
+  unknown-publish-time: refuse
+
+  # Keyservers consulted for PGP signing keys that 'signing-keys' does not
+  # pin.  Empty by default, which means nothing is fetched: a key looked up
+  # in order to check a signature is much weaker evidence than one someone
+  # decided to trust, so asking a third party is opt-in.  Overridable per
+  # host, because an air-gapped mirror has no keyserver to ask.
+  keyservers:
+    - https://keys.openpgp.org
+
+  # Bodies larger than this are streamed to disk instead of being held
+  # in memory.  Enumerating a million artifacts leaves no room for
+  # anything else.
+  maximum-in-memory-download: 64 MiB
+
+  # Dependencies a walk without --db holds in memory before it prunes the
+  # rest and says so.  With --db the queue is on disk and this is ignored.
+  maximum-in-memory-queued-dependencies: 100000
+
+  license-policy: license-policy.yaml
+  security-policy: security-policy.yaml
+  signing-policy: signing-policy.yaml
+
+  # Per-artifact exceptions to `problem-policy` below.  A separate file so
+  # each exception is reviewed on its own and carries its justification.
+  quarantine-policy: quarantine-policy.yaml
+
+hosts:
+  central:
+    # Maven Central.  Its terms of service prohibit catalog enumeration, so
+    # there is deliberately no maven-html-index enumerator pointed at it.
+    url: https://repo1.maven.org/maven2/
+    request-timeout: 2 minutes
+    maximum-concurrent-downloads: 4
+    retry:
+      max-retries: 3
+      initial-delay: 1 sec
+      maximum-delay: 30 sec
+      exponential-back-off: true
+
+      on-status:
+        # A gateway timeout usually means something behind the proxy is
+        # restarting.  Waiting minutes is the useful response; giving up
+        # after three seconds is not.
+        504:
+          max-retries: 10
+          initial-delay: 30 sec
+          maximum-delay: 5 min
+          maximum-total-retry-seconds: 1 hr
+
+        # Central states the rate it will accept, so believe it rather
+        # than guessing with a local curve.
+        429:
+          max-retries: 5
+          honor-retry-after: true
+
+  pypi:
+    url: https://pypi.org/
+    request-timeout: 1 minute
+    maximum-concurrent-downloads: 8
+
+    # pypi.org lists its files on a second host.  Named here so reads may
+    # fetch them, with no credentials: the index's own never travel there.
+    # A host needing credentials is named with `host`, an entry under
+    # `hosts`, or carries its own `authentication`.
+    additional-hosts:
+      - hostname: files.pythonhosted.org
+
+  npmjs:
+    url: https://registry.npmjs.org/
+    maximum-concurrent-downloads: 8
+
+  npm-replica:
+    $comment: Enumeration lives on a different host from resolution.
+    url: https://replicate.npmjs.com/
+
+    # The feed lists names only; each packument comes from the registry,
+    # reached through the registry's own host entry.
+    additional-hosts:
+      - host: npmjs
+
+  github:
+    url: https://api.github.com/
+
+    # GitHub reports an exhausted rate limit as 403 with the reset time in
+    # X-RateLimit-Reset, and the wait is honored like a Retry-After.  A 403
+    # is otherwise a refused credential, which retrying only delays, so it
+    # retries here alone.  A reset past the budget gives up and names the
+    # time to retry after.
+    retry:
+      on-status:
+        403:
+          retry: true
+          max-retries: 1
+          maximum-total-retry-seconds: 1 hr
+
+  osv-bucket:
+    $comment: Where OSV publishes each ecosystem's all.zip.
+    url: https://osv-vulnerabilities.storage.googleapis.com/
+
+  github-web:
+    # Where GitHub serves repository snapshots.  An archive answers with a
+    # redirect to codeload, which is followed only because it is listed.
+    url: https://github.com/
+    additional-hosts:
+      - hostname: codeload.github.com
+        inherit: true
+
+  internal:
+    # An authenticated internal mirror.  Its 500s are permanent - the
+    # appliance returns one for a genuinely missing artifact - so retrying
+    # them only delays the answer.
+    url: https://nexus.example.com/repository/maven-releases/
+    retry:
+      on-status:
+        500:
+          retry: false
+    authentication:
+      kind: bearer
+      token:
+        kind: env
+        name: NEXUS_TOKEN
+
+sources:
+  central:
+    host: central
+    kind: maven
+
+    # Refuse anything published in the last day.  A crude but effective guard
+    # against mirroring a compromised release inside the window where it
+    # would be spotted and yanked.
+    minimum-publish-time: 1 day
+
+    # Maven has no publish-time metadata of its own, so this is read from the
+    # artifact's Last-Modified header.  A repository that does not send one
+    # would have every artifact refused under the setup default, so this
+    # source overrides it.
+    unknown-publish-time: allow
+
+  pypi:
+    host: pypi
+    kind: pypi
+
+    options:
+      # Environment markers need a target environment, or a dependency graph
+      # is undefined.  Without this the tool takes the union of all branches.
+      python-version: "3.12"
+      sys-platform: linux
+
+  npmjs:
+    host: npmjs
+    kind: npm
+
+  # A repository manager hosts many repositories on one server, so the host
+  # is the server and `path` says which repository this source reads.  One
+  # host entry keeps the credentials, the retry rule and the connection
+  # limits in one place, and leaves `url` as the REST API root the manager's
+  # enumerators build off.
+  #
+  # The source is confined to the *joined* prefix, so this one cannot read
+  # `repository/npm-hosted` on the same server.
+  internal-maven:
+    host: internal
+    kind: maven
+    host-path: repository/maven-releases
+
+  tooling:
+    host: github
+    kind: github
+
+    # Only a kind whose contents decide its versions may say this, and
+    # `github` is the one built-in that does: a tag is text its publisher
+    # chose, so `v2.1.0`, `nightly` and `2024-06-01` are all real and the
+    # default refuses to order them.  This project happens to tag semver, so
+    # saying so is what makes a range like `^2.1` resolvable at all.
+    #
+    # Setting it on `maven`, `npm` or `pypi` above is refused rather than
+    # ignored: those speak an ecosystem that already decides the ordering,
+    # and a configuration disagreeing would resolve a plausible-looking
+    # wrong artifact.  One of: maven, pep440, semver, tags.
+    version-handler: semver
+
+    # Optional: read a repository under another name.  A request names the
+    # `to` side, which is the artifact's only identity; the `*` carries the
+    # varying part of the tag across, so tag v8.18.0 is version 8.18.0.  A
+    # mapped repository is reachable only through its rules.
+    names:
+      - from: { name: gitleaks/gitleaks, version: "v*" }
+        to: { name: tools/gitleaks, version: "*" }
+
+    options:
+      # Required: the repositories this source may read.  The owner is
+      # literal; the repository name may hold `*`.
+      repositories:
+        - gitleaks/*
+        - artifactory/web-*
+
+targets:
+  # npm is the only kind this tool can publish to so far.  Reading a
+  # repository and writing to one are separate capabilities, and
+  # `validate-config` refuses a target kind that cannot be written rather
+  # than accepting it and failing at the upload.
+  internal:
+    host: internal
+    kind: npm
+
+    options:
+      # Whether a publish asserts the package's `latest` tag.  That tag is
+      # repository state and a publisher's editorial choice - not a property
+      # of the version being published - which is the same reason this tool
+      # refuses to copy `maven-metadata.xml`.
+      #
+      # `never` is the default and asserts nothing, so a package new to the
+      # mirror has no `latest` until somebody runs `npm dist-tag`.  That is
+      # visible and one command to fix; the alternatives can write a tag
+      # that is wrong and looks right.
+      #
+      # `on-create` sets it when creating a package and never moves it.
+      # `highest` keeps it on the highest version the mirror holds, which
+      # overrules a deliberately pinned `latest`.
+      dist-tags: never
+
+    # The writing half of a source's `host-path`.  Not applied yet - nothing
+    # opens a target until `copy` lands - but `validate-config` checks it,
+    # so a configuration that reads from and writes to one manager can be
+    # written now rather than discovered to be unwritable later.
+    host-path: repository/maven-releases
+
+enumerators:
+  internal-index:
+    # Walks the repository's directory autoindex.  Never point it at Maven
+    # Central, whose terms forbid enumerating the catalog.
+    host: internal
+    kind: maven-html-index
+
+  pypi-all:
+    host: pypi
+    kind: pypi-simple
+
+  npm-all:
+    host: npm-replica
+    kind: npm-replicate
+    options:
+      # Where packuments are read.  Absent means the feed's own host, as a
+      # CouchDB-backed registry serves both.
+      registry: https://registry.npmjs.org/
+
+advisors:
+  osv:
+    $comment: >-
+      Covers vulnerabilities and the malware records OSV ingests from
+      OpenSSF.
+    kind: osv-offline
+    host: osv-bucket
+    ttl: 12 hours
+    ecosystems: [maven, pypi, npm]
+
+  ossf:
+    # Deliberately redundant with OSV: ingestion lags, and malicious packages
+    # are yanked from registries fast, so upstream is authoritative for MAL-
+    # records.
+    kind: ossf-malicious
+    host: github-web
+    ttl: 6 hours
+    options:
+      repository: ossf/malicious-packages
+      branch: main
+
+# Public keys supplied here rather than fetched from a registry.
+#
+# For keys known in advance, and for repositories whose key endpoint or PKI
+# no longer runs: the signatures are still good, but there is nowhere left
+# to ask.  Naming a key on a host replaces that host's key endpoint rather
+# than adding to it.
+signing-keys:
+  npmjs-2022:
+    # npm's registry signing key.  Pinned so verification does not depend on
+    # the key endpoint being reachable at migration time.
+    scheme: npm-ecdsa
+    key-id: SHA256:jl3bwswu80PjjokCgh0o2w5c2U4LhQAE57gj9cz1kzA
+    citation-url: https://docs.npmjs.com/about-registry-signatures
+    # Required.  'never' because npm announces rotations; replace with the
+    # date npm retires this key once it does.
+    expires: never
+    value:
+      kind: text
+      value: >-
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEY6Ya7W++7aUPzvMTrezH6Ycx3c+HOKYCcNGybJZSCJq/fd7Qa8uuAKtdIkUQtQiEKERhAmE5lMMJhpmzYjkWmg==
+
+  legacy-internal:
+    # The key our retired internal PKI signed with.  The service is gone;
+    # the artifacts it signed are not.  Held in a secret manager so the
+    # keyring stays under the same management as everything else.
+    scheme: pgp
+    key-id: BCF4173197ABD5AE
+    citation-url: https://wiki.example.com/archive/retired-signing-keys
+    # The PKI was retired on this date; nothing it signed afterward is ours.
+    expires: "2024-06-30T00:00:00Z"
+    value:
+      kind: env
+      name: LEGACY_SIGNING_KEY
+
+# Run-wide handling per problem code: allowed, soft, hard, or failure.  A
+# code absent here keeps its built-in disposition.  Nothing here is keyed by
+# an artifact; exceptions belong in the quarantine policy.
+problem-policy:
+  # Every key this mirror trusts is assigned in the signing policy, so a
+  # signature by any other key is held back rather than merely flagged.
+  signature-key-unvouched: hard
+
+  # A key lapsing after it signed is ordinary.  Recorded, not quarantined.
+  signature-key-expired: allowed
+
+  # Advisory data a few hours old still beats none.  Mirror the artifact
+  # and flag it for review.
+  advisory-source-stale: soft

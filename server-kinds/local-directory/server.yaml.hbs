@@ -1,0 +1,7 @@
+# A local directory, answered by an emulation of a server.  The url is a
+# file:// url; each repository is a sub-directory of it, or the directory
+# itself when the repository is named "/".
+host:
+  options:
+    symlinks: {{yaml values.symlinks}}
+access: [read, write]

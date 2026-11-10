@@ -1,0 +1,48 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Security Policy",
+    "description": "How to handle artifacts with known vulnerabilities or known malware, organization-wide.  An allowance for specific artifacts is a VEX statement, which arrives with the request: name an OpenVEX or CycloneDX document with --lock.",
+    "type": "object",
+    "required": ["$schema"],
+    "additionalProperties": false,
+    "properties": {
+        "$schema": {"const": "https://github.com/groboclown/artifact-copy/schema/security-policy.schema.json"},
+        "$comment": {
+            "$ref": "#/$defs/Comment"
+        },
+        "$comments": {
+            "$ref": "#/$defs/Comments"
+        },
+        "malware": {
+            "title": "Malware Stance",
+            "description": "What to do with an artifact a corpus flags as malicious.  'forbid' never migrates it; 'report' records it and carries on, which is for auditing an existing mirror before enforcing anything.",
+            "enum": ["forbid", "report"],
+            "default": "forbid"
+        },
+        "vulnerabilities": {
+            "title": "Vulnerability Stance",
+            "description": "What to do with an artifact carrying known vulnerabilities.  Defaults to 'report' because nearly every real dependency graph carries some, and blocking on their mere existence would make the tool unusable.  A maximum-score threshold will be added here.",
+            "enum": ["report", "forbid"],
+            "default": "report"
+        }
+    },
+    "$defs": {
+        "Comment": {
+            "title": "Comment",
+            "description": "A comment, for users of the policy.",
+            "type": "string",
+            "minLength": 0,
+            "maxLength": 5000
+        },
+        "Comments": {
+            "title": "Comment List",
+            "description": "A list of comments.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/Comment"
+            },
+            "minItems": 0,
+            "maxItems": 100
+        }
+    }
+}

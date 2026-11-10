@@ -1,0 +1,16 @@
+source:
+  kind: maven
+  options:
+    # One request per version for the files the POM does not name:
+    # classifiers, Gradle's .module, SBOMs.  Inspection, not enumeration.
+    file-listing: html-index
+    # Central's maven-metadata.xml can be stale (qdox:qdox lists 0.1 to 1.5
+    # while 1.6.1 is served), so versions come from the artifact directory's
+    # index too: one request per artifact.
+    version-discovery: html-index
+  # Central is append-only: a published version is never replaced, so its
+  # artifact index only grows and an older copy is merely incomplete.  A day
+  # rather than the built-in hour.
+  cache-freshness:
+    - files: "maven-metadata.xml*"
+      fresh-for: 24 hours

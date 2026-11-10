@@ -1,0 +1,584 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Extension Protocol Message",
+  "description": "One message exchanged between the tool and an extension.\n\nThere is exactly one exchange format, and every message in either direction validates against this schema.  The `dir` field carries the direction, so a single document type covers invocations, the host calls an extension makes back, and results.\n\nFraming is the mechanism's business, not the format's: a one-shot command writes request.json into its working directory and reads response.json, while a daemon exchanges the same documents over a stream, one per line.  The documents are the contract.\n\nNote what is *not* here.  File contents never travel in a message: an extension reads and writes ordinary files inside its sandbox directory, and a message carries a sandbox-relative path instead.  That is the channel for anything large - an enumerator that decodes a multi-gigabyte index returns a filename, not the bytes.",
+  "type": "object",
+  "required": [
+    "v",
+    "id",
+    "dir"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "v": {
+      "title": "Protocol Version",
+      "description": "Incremented when the format changes incompatibly.  An extension states the version it speaks in its description, so a mismatch is a clear refusal rather than a confusing parse failure downstream.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "id": {
+      "title": "Correlation Id",
+      "description": "Ties a result to its invocation, and a host-result to its host-call.  A daemon-backed mechanism serves concurrent invocations, so responses cannot be assumed to arrive in order.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "dir": {
+      "title": "Direction",
+      "description": "Who is speaking, and about what.",
+      "enum": [
+        "describe",
+        "invoke",
+        "host-call",
+        "host-result",
+        "result",
+        "problem",
+        "failed"
+      ]
+    },
+    "point": {
+      "description": "Which interface is being invoked.  Present on 'invoke'.",
+      "$ref": "#/$defs/PointKind"
+    },
+    "op": {
+      "description": "The operation being invoked, or the host capability being asked for.  Present on 'invoke' and 'host-call'.  The host capabilities are 'head' (response metadata only), 'fetch' (a capped body in memory, see FetchInput) and 'fetch-to-file' (streamed into the sandbox); there is deliberately no uncapped fetch.  Only 'fetch' is implemented.  A source answers 'versions' (SourceVersionsInput) and 'metadata' (SourceMetadataInput).",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 100
+    },
+    "input": {
+      "description": "Arguments, shaped by the operation.  Present on 'invoke' and 'host-call'.",
+      "type": "object"
+    },
+    "output": {
+      "description": "The answer, shaped by the operation.  Present on 'describe', 'result' and 'host-result'.",
+      "type": "object"
+    },
+    "code": {
+      "description": "A problem code from the documented set.  Present on 'problem' and 'failed'.",
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "maxLength": 100
+    },
+    "message": {
+      "description": "The explanation, as an identifier plus named parameters.  Present on 'problem' and 'failed'.",
+      "$ref": "#/$defs/Message"
+    }
+  },
+  "$defs": {
+    "Message": {
+      "title": "Message",
+      "description": "Human-readable text that a consumer may render in its own language.\n\nProse never travels as the payload.  A message names itself and lists its substitutions separately, so a reader that wants another language looks up the id and fills in the arguments, and one that wants what we produced reads the fallback.\n\nThis is not a full internationalization scheme - there is no catalog, no locale negotiation and no plural handling.  It is the part that has to be settled early, because adding the rest later must not change any interface a tool has already been written against.\n\nNote that log lines are exempt: those are read by whoever ran the command, next to the command they typed, and stay in U.S. English.",
+      "type": "object",
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "description": "Names the message, not the occurrence: two reports of the same situation share an id and differ in their arguments.  These are API once anyone translates against them, so renaming one is a breaking change.",
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "args": {
+          "description": "Substitutions, named rather than positional because word order differs between languages and a translator reordering them must not have to think about argument indices.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 5000
+          }
+        },
+        "text": {
+          "description": "The English rendering.  Optional, so a translator may omit it, and always written by this tool - a consumer that knows nothing of these ids still has something to show a person.",
+          "type": "string",
+          "maxLength": 5000
+        }
+      }
+    },
+    "PointKind": {
+      "title": "Extension Point",
+      "description": "The six interfaces.  An implementation may provide several: a registry that can be both read and written provides 'source' and 'target', and a read-only one provides just 'source'.  Nothing requires a pair.",
+      "enum": [
+        "ecosystem",
+        "source",
+        "target",
+        "enumerator",
+        "advisory",
+        "lock"
+      ]
+    },
+    "Description": {
+      "title": "Extension Description",
+      "description": "What an extension says about itself, before anything else is asked of it.  This is what lets a configured 'kind' be a free string: the host needs no hardcoded table saying which ecosystem an enumerator belongs to, because the enumerator says so.",
+      "type": "object",
+      "required": [
+        "protocol",
+        "points"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "points": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 6,
+          "items": {
+            "$ref": "#/$defs/PointKind"
+          }
+        },
+        "ecosystems": {
+          "description": "The ecosystems this extension speaks.\n\nPlural, because a repository manager such as Nexus or Artifactory exposes one REST API covering every format it hosts: a single components endpoint returns Maven, npm and PyPI artifacts together, behind one host, one credential and one pagination cursor.  Forcing that to register as three separate extensions would split one implementation into three that must then share state they have no way to share.\n\nArtifacts are self-describing - a purl carries its own type - so nothing else ever assumed one ecosystem per extension.",
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/EcosystemDesc"
+          }
+        },
+        "dep-kinds": {
+          "description": "Dependency kinds this extension can report.  Not uniform across ecosystems: 'test' is Maven-only, 'peer' is npm-only, and PyPI publishes neither dev nor test dependencies.  Asking for one an ecosystem lacks is an error rather than an empty result that reads as 'there are none'.",
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "enum": [
+              "runtime",
+              "dev",
+              "test",
+              "optional",
+              "peer",
+              "build"
+            ]
+          }
+        },
+        "lock-formats": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/LockFormat"
+          }
+        },
+        "reports-last-download": {
+          "description": "Whether a 'enumerator' can report when an artifact was last downloaded.  Declared rather than discovered, so a command that depends on usage data can refuse before it starts instead of walking a catalog of millions and finding every answer is 'unknown'.  Defaults to false, which is the honest default: a Maven directory index, npm's replication feed and PyPI's simple index carry no usage data at all.  Repository managers do.",
+          "type": "boolean",
+          "default": false
+        },
+        "depth": {
+          "description": "How far an 'enumerator' listing reaches: 'names' only, 'versions', or versions with their 'files'.  Declared rather than chosen by the user, because a catalog of names cannot be asked for versions.  Defaults to 'names', which claims least.",
+          "type": "string",
+          "enum": [
+            "names",
+            "versions",
+            "files"
+          ],
+          "default": "names"
+        },
+        "version-scheme": {
+          "description": "How a 'source' extension's versions read and order, named as a source's 'version-handler' is.  Absent leaves the ecosystem's.  Under 'semver', a raw request 'nodejs@24' means the newest 24.x.y rather than the exact version '24'.",
+          "type": "string",
+          "enum": [
+            "maven",
+            "pep440",
+            "semver",
+            "tags"
+          ]
+        }
+      }
+    },
+    "EcosystemDesc": {
+      "title": "Ecosystem Identity",
+      "description": "Supplied by the extension rather than derived, which is what makes a third-party ecosystem possible at all.",
+      "type": "object",
+      "required": [
+        "id",
+        "purl-type",
+        "osv-name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "maxLength": 100
+        },
+        "purl-type": {
+          "description": "The 'pkg:<type>' segment of a purl.",
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9._-]+$",
+          "maxLength": 100
+        },
+        "osv-name": {
+          "description": "The OSV ecosystem name, which is not derivable from the id: 'Maven', 'PyPI' and 'npm' are each capitalized differently.  Empty where OSV has no such ecosystem, as for 'raw'.",
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100
+        }
+      }
+    },
+    "LockFormat": {
+      "title": "Lock Format",
+      "description": "One lock-file format a 'lock' extension reads.",
+      "type": "object",
+      "required": [
+        "name",
+        "filenames"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The name users type in --lock=FORMAT,FILE.  User-facing API: it lands in scripts, so renaming one is a breaking change.",
+          "type": "string",
+          "pattern": "^[a-z0-9-]+$",
+          "maxLength": 100
+        },
+        "filenames": {
+          "description": "Filename globs this format answers to, for the cheap first pass of dispatch.  '*' matches any run of characters and '?' matches exactly one.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        }
+      }
+    },
+    "LastDownload": {
+      "title": "Last Download",
+      "description": "When a repository last served an artifact, as reported by a 'enumerator'.  Three states, deliberately not a nullable timestamp: an RFC 3339 time is a recorded download; 'never' means the repository tracks downloads and has recorded none; 'unknown' means the repository reports no statistics at all.  'never' is evidence of disuse and 'unknown' is the absence of evidence, so a consumer deciding what to retire must never treat 'unknown' as unused - most enumerators can only report 'unknown', and conflating the two would mark an entire repository's contents as unused.",
+      "oneOf": [
+        {
+          "description": "The repository last served the artifact at this time.",
+          "type": "object",
+          "required": [
+            "at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "at": {
+              "description": "An RFC 3339 timestamp.",
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        {
+          "description": "The repository tracks downloads and has recorded none for this artifact.",
+          "const": "never"
+        },
+        {
+          "description": "The repository reports no download statistics.  No conclusion about usage may be drawn from this.",
+          "const": "unknown"
+        }
+      ]
+    },
+    "Found": {
+      "title": "Found Artifact",
+      "description": "One artifact a 'enumerator' enumerated.",
+      "type": "object",
+      "required": [
+        "purl"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "purl": {
+          "description": "The artifact's identity, as a package URL.",
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "description": "The version, when the enumerator enumerates versions.  Omitted by catalogs that list names only, such as npm's replication feed, where each version would cost a further request.",
+          "type": "string",
+          "minLength": 1
+        },
+        "last-download": {
+          "description": "When the repository last served this artifact.  Defaults to 'unknown' when omitted, because an enumerator that says nothing has claimed nothing.",
+          "$ref": "#/$defs/LastDownload"
+        },
+        "files": {
+          "description": "The files the catalog holds for this artifact, when it lists them.  Only files that belong to the artifact: not checksum sidecars, and for Maven not the repository's own index.  Never a claim that the list is complete.  The host combines these with what a source resolves; see docs/contributors/sources-and-targets.md.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ListedFile"
+          }
+        }
+      }
+    },
+    "ListedFile": {
+      "title": "Listed File",
+      "description": "One file a 'enumerator' saw as part of an artifact.",
+      "type": "object",
+      "required": [
+        "name",
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The file's name, with no directory.",
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "description": "Where the catalog says the file is served.  A source's own URL for the same file takes precedence.",
+          "type": "string",
+          "minLength": 1
+        },
+        "size": {
+          "description": "The size in bytes, when the catalog reports it.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "digests": {
+          "description": "Every digest the catalog reported.  A copy checks the bytes against these.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Digest"
+          }
+        }
+      }
+    },
+    "Digest": {
+      "title": "Digest",
+      "description": "One file digest.",
+      "type": "object",
+      "required": [
+        "algorithm",
+        "hex"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "algorithm": {
+          "enum": [
+            "md5",
+            "sha1",
+            "sha256",
+            "sha512"
+          ]
+        },
+        "hex": {
+          "type": "string",
+          "pattern": "^[0-9a-fA-F]+$"
+        }
+      }
+    },
+    "Page": {
+      "title": "Enumerator Page",
+      "description": "One page of a catalog walk.  Pages rather than a stream, because a stream has no JSON representation and an out-of-process enumerator could not produce one.",
+      "type": "object",
+      "required": [
+        "found"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "found": {
+          "description": "The artifacts on this page.  May be empty while the walk continues.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Found"
+          }
+        },
+        "next": {
+          "description": "Where to resume, passed back on the following call.  Opaque to the host and meaningful only to the enumerator that issued it.  Omitted at the end of the catalog - and only its absence ends a walk, since an empty page may still be followed by more.",
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    },
+    "ArtifactRef": {
+      "title": "Artifact Reference",
+      "description": "The artifact a source operation is about, without its version.",
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "description": "The Maven groupId or npm scope.  Absent where the ecosystem has none.",
+          "type": "string",
+          "minLength": 1
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "SourceVersionsInput": {
+      "title": "Source 'versions' Input",
+      "description": "Asks a source for every published version of one artifact.",
+      "type": "object",
+      "required": [
+        "artifact",
+        "base-url",
+        "options"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "base-url": {
+          "description": "The URL the configured host and path resolve to.  Every 'fetch' must stay under the host's constraints.",
+          "type": "string",
+          "minLength": 1
+        },
+        "options": {
+          "description": "The source's 'options' from the configuration, as written.",
+          "type": "object"
+        }
+      }
+    },
+    "SourceVersionsOutput": {
+      "title": "Source 'versions' Output",
+      "description": "Every published version, in any order.  Empty when the artifact has none.",
+      "type": "object",
+      "required": [
+        "versions"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "versions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SourceVersion"
+          }
+        }
+      }
+    },
+    "SourceVersion": {
+      "title": "Source Version",
+      "type": "object",
+      "required": [
+        "text",
+        "release"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "description": "The version exactly as the repository writes it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "release": {
+          "description": "Whether the version is generally available.",
+          "enum": [
+            "general",
+            "pre-release"
+          ]
+        }
+      }
+    },
+    "SourceMetadataInput": {
+      "title": "Source 'metadata' Input",
+      "description": "Asks a source for the files of one version of one artifact.",
+      "type": "object",
+      "required": [
+        "artifact",
+        "version",
+        "base-url",
+        "options"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "base-url": {
+          "$ref": "#/$defs/SourceVersionsInput/properties/base-url"
+        },
+        "options": {
+          "$ref": "#/$defs/SourceVersionsInput/properties/options"
+        }
+      }
+    },
+    "SourceMetadataOutput": {
+      "title": "Source 'metadata' Output",
+      "description": "The files of one version.  The host downloads them; the extension never does.",
+      "type": "object",
+      "required": [
+        "files"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ListedFile"
+          }
+        },
+        "license": {
+          "description": "An SPDX expression, when the repository declares one.",
+          "type": "string",
+          "minLength": 1
+        },
+        "published": {
+          "description": "When the version was published.",
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "FetchInput": {
+      "title": "Host 'fetch' Input",
+      "description": "Asks the host for a body, held in memory and capped.",
+      "type": "object",
+      "required": [
+        "url",
+        "max-bytes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max-bytes": {
+          "description": "The largest body the extension accepts.  The host may lower it, never raise it.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "accept": {
+          "description": "The 'Accept' header to send.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "FetchOutput": {
+      "title": "Host 'fetch' Output",
+      "description": "The body: as 'text' when it is UTF-8, otherwise as 'base64'.",
+      "type": "object",
+      "additionalProperties": false,
+      "oneOf": [
+        {
+          "required": [
+            "text"
+          ]
+        },
+        {
+          "required": [
+            "base64"
+          ]
+        }
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "base64": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

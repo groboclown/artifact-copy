@@ -1,0 +1,8 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/security-policy.schema.json
+
+# Malware is never migrated.  Vulnerabilities are reported rather than
+# blocked, because nearly every real dependency graph carries some; the
+# allowances below are the exceptions a human has actually reviewed.
+
+malware: forbid
+vulnerabilities: report

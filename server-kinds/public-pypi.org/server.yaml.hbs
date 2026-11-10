@@ -1,0 +1,17 @@
+# pypi.org.  Read only: publish to a public registry with its native tools.
+host:
+  url: https://pypi.org/
+{{#if values.connect-timeout}}
+  connect-timeout: {{yaml values.connect-timeout}}
+{{/if}}
+{{#if values.request-timeout}}
+  request-timeout: {{yaml values.request-timeout}}
+{{/if}}
+{{#if values.maximum-concurrent-downloads}}
+  maximum-concurrent-downloads: {{yaml values.maximum-concurrent-downloads}}
+{{/if}}
+  additional-hosts:
+    - hostname: files.pythonhosted.org
+access: [read]
+default-repository:
+  kind: pypi

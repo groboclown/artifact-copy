@@ -1,0 +1,109 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# The locally running Nexus from `setup/nexus`.  Add this directory with
+# `--config` alongside a base configuration that supplies `setup`; on its
+# own it declares no cache directory and nothing to run.
+#
+# Everything here has to agree with `setup/nexus/configure.sh`, which owns the repository and
+# account names.  The passwords are read straight out of the generated
+# `setup/nexus/.env`, which is never committed - so nothing has to be
+# exported into the environment first.
+#
+# Note on loading the .env files:
+# The configuration can either use a `config-relative-path` or a
+# `working-dir-path`.  Normally, people expect systems to load the
+# `.env` file in the current directory, so `working-dir-path` ends up being a natural
+# way to reference this.  However, in this case, the `.env` has a location
+# that's a sibling to this directory, so we keep it relative to this
+# configuration file.
+#
+# Each repository is named `nexus-local-{repo}` and serves as a source, a
+# target, and an enumerator under that one name.
+
+servers:
+  nexus-local:
+    kind: nexus3
+    url: http://localhost:8081/
+    insecure-transport: true
+    # Plain http, and that is not an oversight: `insecure-transport` says so.
+    # The test cluster has no certificate, so there is nothing to verify;
+    # `tls-verify` is left alone rather than set to false, because turning
+    # verification off on an https url is a different and much worse thing
+    # to copy into a real configuration by accident.
+
+    # The publishing account, for reads and writes alike: a server has one
+    # credential, and the tests write into the same repositories they read.
+    authentication:
+      kind: basic
+      username:
+        kind: text
+        value: am-publisher
+      password:
+        kind: property-file
+        config-relative-path: ../setup/nexus/.env
+        key: PUBLISH_PASSWORD
+
+    repositories:
+      nexus-local-npm-a:
+        name: npm-a
+        kind: npm
+      nexus-local-npm-b:
+        name: npm-b
+        kind: npm
+      nexus-local-npm-c:
+        name: npm-c
+        kind: npm
+      nexus-local-pypi-b:
+        name: pypi-b
+        kind: pypi
+      nexus-local-pypi-c:
+        name: pypi-c
+        kind: pypi
+      nexus-local-maven-a:
+        name: maven-a
+        kind: maven2
+      nexus-local-maven-b:
+        name: maven-b
+        kind: maven2
+      nexus-local-maven-c:
+        name: maven-c
+        kind: maven2
+      nexus-local-raw-a:
+        name: raw-a
+        kind: raw
+      nexus-local-raw-b:
+        name: raw-b
+        kind: raw
+      nexus-local-raw-c:
+        name: raw-c
+        kind: raw
+
+# Anonymous access, in the low-level form: the sugar gives a server one
+# credential, and these repositories are read with none.  `configure.sh`
+# grants anonymous read of the `pypi` format only (`ANONYMOUS_FORMAT`).
+hosts:
+  nexus-local-anonymous:
+    url: http://localhost:8081/
+    insecure-transport: true
+
+sources:
+  nexus-local-pypi-a:
+    host: nexus-local-anonymous
+    kind: pypi
+    host-path: repository/pypi-a
+
+enumerators:
+  nexus-local-pypi-a:
+    host: nexus-local-anonymous
+    kind: nexus
+    options:
+      repository: pypi-a
+      ecosystem: pypi
+
+# Writes still authenticate, through the host the `nexus-local` server
+# generates.
+targets:
+  nexus-local-pypi-a:
+    host: nexus-local
+    kind: pypi
+    host-path: repository/pypi-a

@@ -1,0 +1,22 @@
+# The protocol at maven/{name}, told more by the artifact listing.
+source:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: maven
+    max-listing-rows: {{yaml values.max-listing-rows}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}
+target:
+  kind: maven
+  host-path: {{yaml (concat "maven/" repository.name)}}
+enumerator:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: maven
+    last-download: {{yaml values.last-download}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}

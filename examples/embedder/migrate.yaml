@@ -1,0 +1,25 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# The configuration examples/embedder/copy.rs reads: one public npm source
+# and one internal npm target.
+
+hosts:
+  public-npm:
+    url: https://registry.npmjs.org/
+  internal-npm:
+    url: https://npm.internal.example/
+    authentication:
+      kind: bearer
+      token:
+        kind: env
+        name: INTERNAL_NPM_TOKEN
+
+sources:
+  public-npm:
+    host: public-npm
+    kind: npm
+
+targets:
+  internal-npm:
+    host: internal-npm
+    kind: npm

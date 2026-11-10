@@ -1,0 +1,781 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/groboclown/artifact-copy/schema/report.schema.json",
+  "title": "Report Record",
+  "description": "One line of a 'json-stream' report: a single JSON object, tagged by 'record'.  A report is a header, then artifact and problem records in the order they happened, then a summary.  A reader meeting a 'record' value it does not know should skip the line rather than fail the file.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Header"
+    },
+    {
+      "$ref": "#/$defs/Artifact"
+    },
+    {
+      "$ref": "#/$defs/Problem"
+    },
+    {
+      "$ref": "#/$defs/Summary"
+    }
+  ],
+  "$defs": {
+    "Header": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opens the stream: what produced it, and what it screened against.",
+      "required": [
+        "record",
+        "created",
+        "tool-version",
+        "command",
+        "corpus-age"
+      ],
+      "properties": {
+        "record": {
+          "const": "header"
+        },
+        "created": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tool-version": {
+          "type": "string"
+        },
+        "command": {
+          "type": "string"
+        },
+        "corpus-age": {
+          "type": "object",
+          "description": "What became of each configured advisor, by advisor name.  Always written, even empty: an empty object says no advisor was configured, which is how a clean run is told from an unscreened one.",
+          "additionalProperties": {
+            "$ref": "#/$defs/CorpusAge"
+          }
+        }
+      }
+    },
+    "CorpusAge": {
+      "description": "Whether an advisor answered, and why not.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "consulted"
+          ],
+          "properties": {
+            "consulted": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "modified"
+              ],
+              "properties": {
+                "modified": {
+                  "type": "string",
+                  "format": "date-time"
+                }
+              }
+            }
+          }
+        },
+        {
+          "const": "skipped-by-request"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "unavailable"
+          ],
+          "properties": {
+            "unavailable": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "why"
+              ],
+              "properties": {
+                "why": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "Artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One artifact: what it is, and what the run did with it.  'outcome' is written only by a run that acts ('copy'); with several targets it is the worst of 'outcomes'.",
+      "required": [
+        "record",
+        "purl"
+      ],
+      "properties": {
+        "record": {
+          "const": "artifact"
+        },
+        "purl": {
+          "type": "string",
+          "description": "The package URL, without a version."
+        },
+        "version": {
+          "type": "string",
+          "description": "The exact version.  Absent for a catalog that lists names only, and for a request that resolved to nothing."
+        },
+        "requested": {
+          "type": "string",
+          "description": "What was asked for, written when the request resolved to nothing."
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        },
+        "outcomes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DestinationOutcome"
+          }
+        },
+        "last-download": {
+          "$ref": "#/$defs/LastDownload"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/File"
+          }
+        },
+        "declared-license": {
+          "type": "string",
+          "description": "The license exactly as the ecosystem declared it, before evaluation."
+        },
+        "license": {
+          "$ref": "#/$defs/License"
+        },
+        "published": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Advisory"
+          }
+        },
+        "quarantine": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/QuarantineReservation"
+          }
+        },
+        "provenance": {
+          "type": "array",
+          "description": "Why this artifact was looked at, leaf first.",
+          "items": {
+            "$ref": "#/$defs/Message"
+          }
+        }
+      }
+    },
+    "File": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "url",
+        "verification"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "digests": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Digest"
+          }
+        },
+        "core-metadata": {
+          "type": "array",
+          "description": "A PEP 658 core-metadata document beside the file, with the digests the index published for it.",
+          "items": {
+            "$ref": "#/$defs/Digest"
+          }
+        },
+        "signatures": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Signature"
+          }
+        },
+        "verification": {
+          "$ref": "#/$defs/Verification"
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "listed",
+            "resolved"
+          ],
+          "description": "Who named the file: an enumerator listing it, or a resolution.  Absent reads as 'resolved'."
+        }
+      }
+    },
+    "Verification": {
+      "type": "string",
+      "enum": [
+        "not-attempted",
+        "no-digest-declared",
+        "weak-digest-only",
+        "verified",
+        "failed"
+      ],
+      "description": "How much of a file's integrity was established."
+    },
+    "Digest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "alg",
+        "hex"
+      ],
+      "properties": {
+        "alg": {
+          "type": "string",
+          "enum": [
+            "md5",
+            "sha1",
+            "sha256",
+            "sha512"
+          ]
+        },
+        "hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]+$"
+        }
+      }
+    },
+    "Signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scheme"
+      ],
+      "properties": {
+        "scheme": {
+          "type": "string",
+          "enum": [
+            "npm-ecdsa",
+            "pgp-detached",
+            "pypi-attestation"
+          ]
+        },
+        "key-id": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        }
+      }
+    },
+    "LastDownload": {
+      "description": "When the repository last served the artifact.  Absent when unknown.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "at"
+          ],
+          "properties": {
+            "at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        {
+          "const": "never"
+        },
+        {
+          "const": "unknown"
+        }
+      ]
+    },
+    "DestinationOutcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "destination",
+        "outcome"
+      ],
+      "properties": {
+        "destination": {
+          "type": "string",
+          "description": "The configured target's name."
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome"
+        }
+      }
+    },
+    "Outcome": {
+      "description": "What a run that acts did with the artifact.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "verification"
+          ],
+          "properties": {
+            "action": {
+              "const": "copied"
+            },
+            "verification": {
+              "$ref": "#/$defs/Verification"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action"
+          ],
+          "properties": {
+            "action": {
+              "const": "already-present"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "why"
+          ],
+          "properties": {
+            "action": {
+              "const": "refused"
+            },
+            "why": {
+              "$ref": "#/$defs/ProblemBody"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "why"
+          ],
+          "properties": {
+            "action": {
+              "const": "unresolved"
+            },
+            "why": {
+              "$ref": "#/$defs/ProblemBody"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action",
+            "why"
+          ],
+          "properties": {
+            "action": {
+              "const": "failed"
+            },
+            "why": {
+              "$ref": "#/$defs/ProblemBody"
+            }
+          }
+        }
+      ]
+    },
+    "Decision": {
+      "type": "string",
+      "enum": [
+        "allow",
+        "forbid"
+      ]
+    },
+    "DepKind": {
+      "type": "string",
+      "enum": [
+        "runtime",
+        "dev",
+        "test",
+        "optional",
+        "peer",
+        "build"
+      ]
+    },
+    "License": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decision",
+        "reason"
+      ],
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "spdx": {
+          "type": "string"
+        },
+        "reason": {
+          "$ref": "#/$defs/Message"
+        },
+        "usage": {
+          "type": "object",
+          "description": "Per-usage decisions, keyed by dependency kind, when a policy rule carried a 'usage' map.",
+          "propertyNames": {
+            "$ref": "#/$defs/DepKind"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/Decision"
+          }
+        }
+      }
+    },
+    "Advisory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "advisor",
+        "kind",
+        "match"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "advisor": {
+          "type": "string",
+          "description": "The configured advisor whose corpus supplied the record."
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "malware",
+            "vulnerability"
+          ]
+        },
+        "match": {
+          "type": "string",
+          "enum": [
+            "affected",
+            "version-unusable"
+          ],
+          "description": "Whether the version was shown to be affected, or could not be compared with the advisory at all."
+        },
+        "summary": {
+          "type": "string"
+        },
+        "suppressed-by": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "The VEX statement that cleared this.",
+          "required": [
+            "source"
+          ],
+          "properties": {
+            "justification": {
+              "type": "string"
+            },
+            "detail": {
+              "type": "string"
+            },
+            "source": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "Bypass": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The quarantine-policy acknowledgement that answered for the artifact.",
+      "required": [
+        "source"
+      ],
+      "properties": {
+        "justification": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "description": "Which file and entry it came from."
+        },
+        "expires": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "Quarantine": {
+      "type": "string",
+      "enum": [
+        "soft",
+        "hard"
+      ]
+    },
+    "QuarantineReservation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "class"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/Code"
+        },
+        "class": {
+          "$ref": "#/$defs/Quarantine"
+        },
+        "hardened": {
+          "type": "boolean",
+          "description": "Present and true when the run's strictness ('--harden'), rather than the class, held this back."
+        },
+        "bypassed-by": {
+          "$ref": "#/$defs/Bypass"
+        }
+      }
+    },
+    "Action": {
+      "type": "string",
+      "enum": [
+        "ignore",
+        "warn",
+        "stop-spider",
+        "skip-artifact",
+        "abort"
+      ]
+    },
+    "Code": {
+      "type": "string",
+      "enum": [
+        "config-invalid",
+        "config-unreadable",
+        "file-unreadable",
+        "file-unwritable",
+        "cache-file-missing",
+        "cache-entry-expired",
+        "cache-entry-stale",
+        "cache-entry-evicted",
+        "report-unusable",
+        "checksum-mismatch",
+        "size-mismatch",
+        "signature-invalid",
+        "signature-key-revoked",
+        "signature-key-expired",
+        "signature-missing",
+        "signature-key-unvouched",
+        "artifact-not-found",
+        "version-unresolvable",
+        "host-unreachable",
+        "request-rejected",
+        "secondary-file-rejected",
+        "download-too-large",
+        "metadata-malformed",
+        "license-forbidden",
+        "license-unknown",
+        "license-unmatched",
+        "malware-known",
+        "vulnerability-known",
+        "vulnerability-under-investigation",
+        "advisory-version-unusable",
+        "advisory-source-stale",
+        "advisory-source-unavailable",
+        "vex-unparsable",
+        "vex-unmatched",
+        "vex-incomplete",
+        "bom-ecosystem-foreign",
+        "publish-too-recent",
+        "dependency-unresolved",
+        "dependency-metadata-dynamic",
+        "pom-profile-unsupported",
+        "pom-property-unresolved",
+        "lock-unrecognized",
+        "lock-format-unknown",
+        "lock-malformed",
+        "enumeration-unsupported",
+        "sample-percent-unsupported",
+        "listing-mismatch",
+        "upload-metadata-incomplete",
+        "distribution-type-unsupported",
+        "file-omitted",
+        "artifact-omitted",
+        "unimplemented",
+        "aborted"
+      ],
+      "description": "Every problem code this version reports."
+    },
+    "ProblemBody": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A problem: its code, what the run did about it, and a message a tool can render without parsing prose.",
+      "required": [
+        "code",
+        "action",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/Code"
+        },
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "quarantine": {
+          "$ref": "#/$defs/Quarantine"
+        },
+        "bypassed-by": {
+          "$ref": "#/$defs/Bypass"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Message"
+          }
+        }
+      }
+    },
+    "Problem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record",
+        "code",
+        "action",
+        "message"
+      ],
+      "properties": {
+        "record": {
+          "const": "problem"
+        },
+        "code": {
+          "$ref": "#/$defs/Code"
+        },
+        "action": {
+          "$ref": "#/$defs/Action"
+        },
+        "quarantine": {
+          "$ref": "#/$defs/Quarantine"
+        },
+        "bypassed-by": {
+          "$ref": "#/$defs/Bypass"
+        },
+        "message": {
+          "$ref": "#/$defs/Message"
+        },
+        "provenance": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Message"
+          }
+        }
+      }
+    },
+    "Message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A stable identifier, such as 'pypi-weak-digest-only'."
+        },
+        "args": {
+          "type": "object",
+          "description": "Named arguments, as strings.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "text": {
+          "type": "string",
+          "description": "The English rendering, as a fallback."
+        }
+      }
+    },
+    "Summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Closes the stream.  Its absence means the run did not finish.",
+      "required": [
+        "record",
+        "artifacts",
+        "worst-action"
+      ],
+      "properties": {
+        "record": {
+          "const": "summary"
+        },
+        "artifacts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "counts": {
+          "type": "object",
+          "description": "Problems by code.",
+          "propertyNames": {
+            "$ref": "#/$defs/Code"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "quarantined": {
+          "type": "object",
+          "description": "Problems, not artifacts, by quarantine class.",
+          "propertyNames": {
+            "$ref": "#/$defs/Quarantine"
+          },
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "worst-action": {
+          "$ref": "#/$defs/Action"
+        },
+        "unmatched-suppressions": {
+          "type": "array",
+          "description": "VEX statements this run showed to be dead policy, as 'document#advisory'.",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

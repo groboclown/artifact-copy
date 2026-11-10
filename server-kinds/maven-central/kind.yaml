@@ -1,0 +1,37 @@
+description: Maven Central
+server:
+  file: server.yaml.hbs
+  values:
+    type: object
+    additionalProperties: false
+    properties:
+      connect-timeout:
+        description: How long to wait for a connection, such as 30 or "2 min"; a bare number is seconds.
+        oneOf:
+          - type: number
+            minimum: 0
+            maximum: 31536000
+          - type: string
+            maxLength: 100
+      request-timeout:
+        description: How long to wait for a whole request, such as 30 or "2 min"; a bare number is seconds.
+        oneOf:
+          - type: number
+            minimum: 0
+            maximum: 31536000
+          - type: string
+            maxLength: 100
+      mirrors:
+        description: Copies of Central asked first for each file, in order; [] reads Central alone.  Google's GCS copy also serves maven-central-eu and maven-central-asia.
+        type: array
+        maxItems: 10
+        items:
+          type: string
+          pattern: "^https?://"
+          maxLength: 2000
+        default:
+          - https://maven-central.storage-download.googleapis.com/maven2/
+repositories:
+  maven:
+    file: maven.yaml.hbs
+    roles: [source]

@@ -1,0 +1,18 @@
+# The protocol at repository/{name}, told more by the REST API at the root.
+source:
+  kind: nexus
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: pypi
+    max-listing-rows: {{yaml values.max-listing-rows}}
+target:
+  kind: pypi
+  host-path: {{yaml (concat "repository/" repository.name)}}
+  options:
+    # Allow legacy distributions, if desired.
+    legacy-dists: {{yaml values.legacy-dists}}
+enumerator:
+  kind: nexus
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: pypi

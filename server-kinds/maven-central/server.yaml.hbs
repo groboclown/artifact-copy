@@ -1,0 +1,29 @@
+# Maven Central.  Read only.  Its terms of service prohibit catalog
+# enumeration, and while this could allow for a published index enumerator,
+# that implies using this tool to perform a clone, which it must not do for
+# public repositories (Maven Central's terms forbid it).
+host:
+  url: https://repo1.maven.org/maven2/
+{{#if values.connect-timeout}}
+  connect-timeout: {{yaml values.connect-timeout}}
+{{/if}}
+{{#if values.request-timeout}}
+  request-timeout: {{yaml values.request-timeout}}
+{{/if}}
+  maximum-concurrent-downloads: 1
+{{#if values.mirrors}}
+  # Files only: no mirror serves Central's directory indexes, so "*/" goes
+  # straight to Central rather than costing a 404 first.
+  mirrors:
+{{#each values.mirrors}}
+    - url: {{yaml this}}
+      skip: ["*/"]
+{{/each}}
+{{/if}}
+  retry:
+    on-status:
+      429:
+        honor-retry-after: true
+access: [read]
+default-repository:
+  kind: maven

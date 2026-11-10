@@ -1,0 +1,29 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# Amazon Corretto, from the GitHub releases of `corretto/corretto-<major>`,
+# read through the WASM extension in `extensions/corretto-releases` and the
+# `github-api` host from `42-github.yaml`.  Build it first with
+# `make build-extensions`.
+#
+# The artifact is the major and the version its release tag:
+# `corretto-25@25.0.5.0.10`, or `corretto-25` for the newest.  A release
+# that fixes only some platforms carries the rest from the build before
+# it within the same OpenJDK update.  A resolution costs about two GitHub
+# API requests.
+
+extensions:
+  corretto-releases:
+    kind: wasm
+    module: ../../extensions/corretto-releases/target/wasm32-wasip1/release/corretto_releases.wasm
+
+sources:
+  # The Linux x64 and Windows x64 JDK archives only, so a copy stays small.
+  corretto:
+    host: github-api
+    kind: corretto-releases
+    options:
+      files:
+        - "amazon-corretto-*-linux-x64.tar.gz"
+        - "!*-alpine-*"
+        - "!*-debugsymbols-*"
+        - "amazon-corretto-*-windows-x64-jdk.zip"

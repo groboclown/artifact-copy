@@ -1,0 +1,24 @@
+# Any repository, whatever its format, read and written as raw files.
+# Another format is read through its browse pages and written one PUT per
+# file, which that format may refuse.
+source:
+  kind: nexus
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}
+    max-listing-rows: {{yaml values.max-listing-rows}}
+target:
+  kind: nexus-raw
+  options:
+    repository: {{yaml repository.name}}
+    mapping: {{yaml values.mapping}}
+    overwrite-guard: {{yaml values.overwrite-guard}}
+    upload-group-size: {{yaml values.upload-group-size}}
+    max-listing-rows: {{yaml values.max-listing-rows}}
+enumerator:
+  kind: nexus
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}

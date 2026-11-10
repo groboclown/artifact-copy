@@ -1,0 +1,24 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/signing-policy.schema.json
+
+$comment: >-
+  Which PGP keys may vouch for which artifacts.  The key material lives in
+  the configuration's signing-keys, or comes from a keyserver; this file
+  says whose signature counts for what.  The fingerprints below are
+  placeholders: take real ones from each project's KEYS file.
+
+rules:
+  # Every Apache Commons artifact, signed by the release managers' keys.
+  # A signature by any other key on these artifacts reports
+  # signature-key-unvouched, and these keys vouch for nothing else.
+  - purl: pkg:maven/org.apache.commons/*
+    fingerprints:
+      - "0000 1111 2222 3333 4444  5555 6666 7777 8888 9999"
+      - "AAAA BBBB CCCC DDDD EEEE  FFFF 0000 1111 2222 3333"
+    justification: https://downloads.apache.org/commons/KEYS
+
+  # A key that signed only the 2.x line of one library.  Earlier versions
+  # were signed by a key since retired, so they fall outside this rule.
+  - purl: "pkg:maven/com.example/lib@[2.0,)"
+    fingerprints:
+      - "0123456789ABCDEF0123456789ABCDEF01234567"
+    justification: https://example.com/lib/release-keys

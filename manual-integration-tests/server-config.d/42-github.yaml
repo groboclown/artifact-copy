@@ -1,0 +1,15 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/config.schema.json
+
+# The GitHub REST API, shared by every source that reads it.
+#
+# Anonymous access allows 60 requests an hour.  Add `authentication` with
+# a token to raise that; it is never sent to the additional hosts.
+
+hosts:
+  github-api:
+    url: https://api.github.com/
+    additional-hosts:
+      # Amazon Corretto downloads since 2020, for `43-corretto.yaml`.
+      - hostname: corretto.aws
+      # Downloads of the earliest Corretto 8 and 11 releases.
+      - hostname: d3pxv6yz143wms.cloudfront.net

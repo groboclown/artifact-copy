@@ -1,0 +1,288 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "License Policy",
+  "description": "A verbose description of how to handle artifact licenses.",
+  "type": "object",
+  "required": [
+    "$schema"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "const": "https://github.com/groboclown/artifact-copy/schema/license-policy.schema.json"
+    },
+    "$comment": {
+      "$ref": "#/$defs/Comment"
+    },
+    "$comments": {
+      "$ref": "#/$defs/Comments"
+    },
+    "allowed-licenses": {
+      "title": "Allowed Licenses",
+      "description": "List of SPDX license expressions allowed outright.  Some artifacts may override this.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SpdxRef"
+      }
+    },
+    "default-behavior": {
+      "description": "What to do for artifacts that do not fall into an allowed or forbidden license list.",
+      "enum": [
+        "allow",
+        "forbid"
+      ]
+    },
+    "unknown-license": {
+      "description": "What to do for artifacts that do not identify a license.",
+      "enum": [
+        "allow",
+        "forbid"
+      ]
+    },
+    "forbidden-licenses": {
+      "title": "Forbidden Licenses",
+      "description": "List of SPDX license expressions disallowed outright.  Some artifacts may override this.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SpdxRef"
+      }
+    },
+    "aliases": {
+      "title": "License Aliases",
+      "description": "SPDX license expression aliases.  Allows defining possible alternative names, for sources that don't follow SPDX identifiers.  Maps from the SPDX expression to the aliases.",
+      "type": "object",
+      "patternProperties": {
+        "^.+$": {
+          "title": "Alias",
+          "description": "Alias definition.",
+          "type": "object",
+          "required": [],
+          "additionalProperties": false,
+          "properties": {
+            "$comment": {
+              "$ref": "#/$defs/Comment"
+            },
+            "$comments": {
+              "$ref": "#/$defs/Comments"
+            },
+            "urls": {
+              "description": "List of license URLs that file under this expression.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/Url"
+              }
+            },
+            "names": {
+              "description": "List of license names that file under this expression.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            }
+          }
+        }
+      }
+    },
+    "artifacts": {
+      "title": "Artifacts",
+      "description": "List of artifacts that override license or allowed/forbidden status.  The FIRST entry whose purl pattern matches is the one applied, so order matters: place a narrow rule such as 'pkg:npm/foo@2.*' above a broad 'pkg:npm/foo', or the broad one shadows it.",
+      "type": "array",
+      "items": {
+        "title": "Artifact",
+        "description": "Artifact definition.",
+        "type": "object",
+        "required": [],
+        "additionalProperties": false,
+        "properties": {
+          "$comment": {
+            "$ref": "#/$defs/Comment"
+          },
+          "$comments": {
+            "$ref": "#/$defs/Comments"
+          },
+          "purl": {
+            "title": "Artifact pUrl Pattern",
+            "description": "The artifact this rule covers, as a glob: '*' matches any run of characters and '?' matches exactly one.  A pattern naming no version covers every version of that artifact, and is anchored, so 'pkg:npm/special' does not reach 'pkg:npm/specialist'.\n\nThe version qualifier exists because packages change license mid-life, and forbidding the package outright would refuse the earlier versions that are still fine:\n\n  pkg:npm/foo          every version\n  pkg:npm/foo@2.*      the 2.x line only\n  pkg:npm/foo@*-beta*  every pre-release\n  pkg:maven/g/a@*?classifier=sources   one classifier, any version\n\nNote that a glob is textual and cannot express 'version 7.11 and later'.  Covering a license change means listing the lines above it, and a new major release needs a new entry.",
+            "$ref": "#/$defs/Url"
+          },
+          "ref": {
+            "title": "Reference",
+            "description": "Reference or source for the explanation.",
+            "$ref": "#/$defs/Url"
+          },
+          "license": {
+            "$ref": "#/$defs/LicenseDeclaration"
+          },
+          "policy": {
+            "description": "License policy for this artifact.  Ignored when 'usage' is present, which is the more precise statement.",
+            "enum": [
+              "default",
+              "allow",
+              "forbid"
+            ],
+            "default": "default"
+          },
+          "usage": {
+            "title": "Per-Usage Policy",
+            "description": "A more precise allowance, keyed by the kind of dependency the artifact is used as, for example {\"runtime\": \"forbid\", \"test\": \"allow\"}.\n\nA single 'allow' decides the whole map, however many 'forbid' entries sit beside it.  That is deliberate: this tool decides whether an artifact must exist in the target repository, not whether code may link against it.  An artifact cleared for test use has to be mirrored or the tests cannot run, so the entry above means 'mirror it'.  The full map is carried into the report, so the runtime prohibition is recorded rather than lost, and enforcing the split is the build's job.\n\nKinds are not uniform across ecosystems: 'test' and 'build' (a parent POM or an imported BOM) exist only for Maven, 'peer' only for npm, and PyPI publishes neither dev nor test dependencies.  An entry naming a kind the artifact's ecosystem does not have is simply never matched.",
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "runtime": {
+                "$ref": "#/$defs/UsageDecision"
+              },
+              "dev": {
+                "$ref": "#/$defs/UsageDecision"
+              },
+              "test": {
+                "$ref": "#/$defs/UsageDecision"
+              },
+              "optional": {
+                "$ref": "#/$defs/UsageDecision"
+              },
+              "peer": {
+                "$ref": "#/$defs/UsageDecision"
+              },
+              "build": {
+                "$ref": "#/$defs/UsageDecision"
+              }
+            }
+          },
+          "reason": {
+            "title": "Reason",
+            "description": "Analysis of the reason for this entry.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 5000
+          },
+          "reasons": {
+            "type": "array",
+            "minLength": 1,
+            "maxLength": 100,
+            "items": {
+              "title": "Reason",
+              "description": "Analysis of the reason for this entry.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 5000
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "LicenseDeclaration": {
+      "title": "License Declaration",
+      "description": "Declares the license under use.  This allows for a simple SPDX format string, or a dictionary to provide additional context.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SPDX"
+        },
+        {
+          "type": "object",
+          "required": [
+            "spdx-id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "$comment": {
+              "$ref": "#/$defs/Comment"
+            },
+            "$comments": {
+              "$ref": "#/$defs/Comments"
+            },
+            "spdx-id": {
+              "$ref": "#/$defs/SPDX"
+            },
+            "copyright": {
+              "title": "License copyright",
+              "description": "A copyright",
+              "type": "string",
+              "minLength": 0,
+              "maxLength": 1000
+            },
+            "uris": {
+              "title": "License URIs",
+              "description": "List of links to known license locations for the artifact.  People may include relative file locations for their personal records.  Any included references must be handled safely.",
+              "type": "array",
+              "minItems": 0,
+              "maxItems": 1000,
+              "items": {
+                "$ref": "#/$defs/Url"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "UsageDecision": {
+      "title": "Usage Decision",
+      "description": "Whether the artifact is permitted in this role.",
+      "enum": [
+        "allow",
+        "forbid"
+      ]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment, for users of the configuration.",
+      "type": "string",
+      "minLength": 0,
+      "maxLength": 5000
+    },
+    "Comments": {
+      "title": "Comment List",
+      "description": "A list of comments.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Comment"
+      },
+      "minLength": 0,
+      "maxLength": 100
+    },
+    "SpdxRef": {
+      "title": "SPDX reference",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SPDX"
+        },
+        {
+          "type": "object",
+          "required": [
+            "spdx-id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "$comment": {
+              "$ref": "#/$defs/Comment"
+            },
+            "$comments": {
+              "$ref": "#/$defs/Comments"
+            },
+            "spdx-id": {
+              "$ref": "#/$defs/SPDX"
+            }
+          }
+        }
+      ]
+    },
+    "SPDX": {
+      "title": "SPDX Expression",
+      "description": "A valid SPDX expression (https://spdx.github.io/spdx-spec/v3.0.1/annexes/spdx-license-expressions/)",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "Url": {
+      "title": "URL",
+      "description": "Universal Resource Location.",
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 5000
+    }
+  }
+}

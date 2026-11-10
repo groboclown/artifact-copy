@@ -1,0 +1,24 @@
+# The storage API is the whole source; see repo::artifactory::raw.
+source:
+  kind: artifactory
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}
+target:
+  kind: artifactory-generic
+  options:
+    repository: {{yaml repository.name}}
+    mapping: {{yaml values.mapping}}
+    overwrite-guard: {{yaml values.overwrite-guard}}
+# OSS refuses the sorted AQL the 'artifactory' enumerator pages with, so
+# this one pages by upload-time window.  AQL needs a login with read
+# permission, even on an anonymously readable repository, so a server
+# without 'authentication' is refused; option 'anonymous: attempt' overrides.
+enumerator:
+  kind: artifactory-oss
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}
+    anonymous: {{yaml values.anonymous}}

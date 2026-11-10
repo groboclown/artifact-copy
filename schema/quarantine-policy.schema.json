@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/groboclown/artifact-copy/schema/quarantine-policy.schema.json",
+  "title": "Quarantine Policy",
+  "description": "Per-artifact overrides of how quarantine issues are handled.\n\nThe configuration's 'problem-policy' table says what the rules are, for every artifact a run touches.  This file says which specific artifacts are exceptions to them, and why.  Keeping the two apart is deliberate: an exception is reviewable on its own in a pull request, it carries a justification, and it is edited on a completely different cadence from the configuration around it.\n\nIt overrides in both directions.  Loosening is the common case - 'this one is a false positive' - but an entry may name any of the four classes, so tightening a single artifact is as expressible as excusing one.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema"
+  ],
+  "properties": {
+    "$schema": {
+      "description": "Must be this schema's identifier.",
+      "type": "string"
+    },
+    "$comment": {
+      "type": "string"
+    },
+    "$comments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rules": {
+      "title": "Artifact Overrides",
+      "description": "Checked in order; the first rule matching both the artifact and the code wins.  Order therefore matters, and a narrow rule belongs above a broad one.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Rule"
+      }
+    }
+  },
+  "$defs": {
+    "Rule": {
+      "title": "Artifact Override",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purl",
+        "codes",
+        "class",
+        "expires"
+      ],
+      "properties": {
+        "$comment": {
+          "type": "string"
+        },
+        "$comments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "purl": {
+          "description": "Which artifact, as a purl.  A version qualifier is a RANGE in the artifact's own ecosystem, not a glob: 'pkg:npm/tuna@<2' means every npm version below 2 by npm's ordering, which a textual match cannot express.  A purl naming no version matches every version.",
+          "type": "string",
+          "minLength": 1
+        },
+        "codes": {
+          "description": "Which problem codes this rule answers.  Required, and there is deliberately no way to say 'every code for this artifact': excusing a missing signature should not thereby excuse a malware finding on the same artifact.\n\nThe list is every code that says something about an artifact - a wider question than 'is this a classic quarantine'.  'dependency-unresolved' and 'pom-property-unresolved' are nobody's idea of quarantine and are still things you may want to state a handling for on one package.  It is the same list the configuration's 'problem-policy' table accepts, because a code you can set a rule for run-wide is exactly one you can make an exception to here.\n\nAbsent are the codes that are not about an artifact.  Faults in the input a run was given - 'config-invalid', 'config-unreadable', 'file-unreadable', 'lock-format-unknown', 'lock-unrecognized', 'lock-malformed', 'enumeration-unsupported', 'sample-percent-unsupported' - are fail-fast and deliberately beyond the reach of configuration: a rule that could excuse an unreadable lock file would be excusing the file that names the artifacts.  And the tool's own state - 'unimplemented', 'aborted' - has nothing an artifact could be an exception to.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "checksum-mismatch",
+              "size-mismatch",
+              "signature-invalid",
+              "signature-key-revoked",
+              "signature-key-expired",
+              "signature-missing",
+              "signature-key-unvouched",
+              "artifact-not-found",
+              "version-unresolvable",
+              "host-unreachable",
+              "request-rejected",
+              "secondary-file-rejected",
+              "download-too-large",
+              "metadata-malformed",
+              "license-forbidden",
+              "license-unknown",
+              "license-unmatched",
+              "malware-known",
+              "vulnerability-known",
+              "vulnerability-under-investigation",
+              "advisory-version-unusable",
+              "advisory-source-stale",
+              "advisory-source-unavailable",
+              "vex-unparsable",
+              "vex-unmatched",
+              "vex-incomplete",
+              "bom-ecosystem-foreign",
+              "publish-too-recent",
+              "dependency-unresolved",
+              "dependency-metadata-dynamic",
+              "pom-profile-unsupported",
+              "pom-property-unresolved",
+              "listing-mismatch",
+              "upload-metadata-incomplete",
+              "distribution-type-unsupported",
+              "file-omitted",
+              "artifact-omitted"
+            ]
+          }
+        },
+        "class": {
+          "description": "How these codes are handled for this artifact.",
+          "type": "string",
+          "enum": [
+            "allowed",
+            "soft",
+            "hard",
+            "failure"
+          ]
+        },
+        "justification": {
+          "description": "Why this exception is acceptable.  Not required by the schema, and strongly worth writing: an exception nobody can re-evaluate is one nobody will ever dare remove.",
+          "type": "string"
+        },
+        "expires": {
+          "title": "Expiry",
+          "description": "When this override lapses: an RFC 3339 timestamp, or the word 'never'.\n\nRequired, and 'never' has to be written out.  An acknowledgement with no end date should be a decision somebody made and wrote down, not what happens when a field is left out - and one field with two spellings beats two fields that can contradict each other.\n\nAfter the date, the artifact falls back to the problem-policy default.  validate-config reports overrides that have already lapsed, so a list of exceptions can be pruned rather than accumulating until nobody dares delete one.",
+          "type": "string",
+          "anyOf": [
+            {
+              "title": "Deliberately never lapses",
+              "const": "never"
+            },
+            {
+              "title": "Lapses on a date",
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

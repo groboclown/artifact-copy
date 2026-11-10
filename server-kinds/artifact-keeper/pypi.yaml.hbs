@@ -1,0 +1,25 @@
+# The protocol at pypi/{name}, told more by the artifact listing.
+source:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: pypi
+    max-listing-rows: {{yaml values.max-listing-rows}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}
+target:
+  kind: pypi
+  host-path: {{yaml (concat "pypi/" repository.name)}}
+  options:
+    # Allow legacy distributions, if desired.
+    legacy-dists: {{yaml values.legacy-dists}}
+enumerator:
+  kind: artifact-keeper
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: pypi
+    last-download: {{yaml values.last-download}}
+{{#if values.mode}}
+    mode: {{yaml values.mode}}
+{{/if}}

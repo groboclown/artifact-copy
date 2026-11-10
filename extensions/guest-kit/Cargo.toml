@@ -1,0 +1,13 @@
+[package]
+name = "guest-kit"
+version = "0.1.0"
+edition = "2024"
+description = "Shared guest side of the artifact-copy WASM extension protocol."
+publish = false
+
+# Built only as a dependency of each extension, never as part of the tool.
+[workspace]
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"

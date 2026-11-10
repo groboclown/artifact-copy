@@ -1,0 +1,37 @@
+$schema: https://github.com/groboclown/artifact-copy/schema/quarantine-policy.schema.json
+
+# Per-artifact exceptions to the configuration's `problem-policy` table.
+# The first rule matching both the artifact and the code wins, so a narrow
+# rule belongs above a broad one.
+
+rules:
+  # Tightening one artifact: a package this team signs and publishes itself
+  # must never arrive unsigned, whatever the run-wide default says.
+  - purl: pkg:npm/@example/auth-client
+    codes: [signature-missing, signature-key-unvouched]
+    class: failure
+    justification: >-
+      Our own release pipeline signs every version.  An unsigned or
+      unvouched copy means the pipeline was bypassed.
+    expires: never
+
+  # Loosening a version range.  A version qualifier is a range in the
+  # ecosystem's own ordering, so this covers every 1.x release.
+  - purl: pkg:maven/com.example/legacy-lib@<2
+    codes: [signature-missing]
+    class: allowed
+    justification: >-
+      Released before the project signed anything.  Checksums were compared
+      against the vendor's archived release notes; see SEC-1043.
+    expires: never
+
+  # A time-boxed exception.  After the date, the artifact falls back to the
+  # `problem-policy` default, and `validate-config` reports the lapsed rule
+  # so it can be pruned.
+  - purl: pkg:pypi/urllib3@2.5.1
+    codes: [publish-too-recent]
+    class: allowed
+    justification: >-
+      Emergency security fix needed before the publish window elapses.
+      Approved in SEC-1077.
+    expires: "2027-01-31T00:00:00Z"

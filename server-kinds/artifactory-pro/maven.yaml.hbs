@@ -1,0 +1,17 @@
+# The protocol at {name}, told more by the storage API.
+source:
+  kind: artifactory
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: maven
+target:
+  kind: maven
+  host-path: {{yaml repository.name}}
+# AQL needs a login with read permission, even on an anonymously readable
+# repository, so a server without 'authentication' is refused; option
+# 'anonymous: attempt' overrides.
+enumerator:
+  kind: artifactory
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: maven

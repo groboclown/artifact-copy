@@ -1,0 +1,27 @@
+# Access service settings that `configure.sh` depends on.
+#
+# Copied into the data volume by the `access-config` service before
+# Artifactory starts.  Access reads `access.config.import.yml` only at
+# startup, merges it over its own configuration, and consumes the file.
+#
+# Keys are from `etc/access/access.config.template.yml` in the image.
+
+security:
+  # `../sctl.sh` generates hex passwords, which have no uppercase or special
+  # characters, and the image's policy demands both.  Zero, as the
+  # template documents the defaults.
+  password-policy:
+    uppercase: 0
+    lowercase: 0
+    special-char: 0
+    digit: 0
+
+token:
+  # Let `POST /access/api/v1/tokens` accept Basic credentials, so the
+  # admin password can create the admin token.
+  allow-basic-auth: true
+
+permissions:
+  # Open `/access/api/v1/permissions` to an admin token.  The anonymous
+  # grant uses it; OSS refuses `/artifactory/api/security/permissions`.
+  allow-admin-access-to-permissions-v1-api: true

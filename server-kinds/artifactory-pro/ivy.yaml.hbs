@@ -1,0 +1,18 @@
+# An Ivy-typed repository read as raw files, laid out name/version/file by
+# default.  The package type is not evidence of the layout, and ivy.xml is
+# read as a file, never for dependencies.  No target: nothing writes Ivy.
+source:
+  kind: artifactory
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}
+# AQL needs a login with read permission, even on an anonymously readable
+# repository, so a server without 'authentication' is refused; option
+# 'anonymous: attempt' overrides.
+enumerator:
+  kind: artifactory
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: raw
+    mapping: {{yaml values.mapping}}

@@ -1,0 +1,16 @@
+# The public npm registry.  Read only; the replication enumerator is not
+# built yet.
+host:
+  url: https://registry.npmjs.org/
+{{#if values.connect-timeout}}
+  connect-timeout: {{yaml values.connect-timeout}}
+{{/if}}
+{{#if values.request-timeout}}
+  request-timeout: {{yaml values.request-timeout}}
+{{/if}}
+{{#if values.maximum-concurrent-downloads}}
+  maximum-concurrent-downloads: {{yaml values.maximum-concurrent-downloads}}
+{{/if}}
+access: [read]
+default-repository:
+  kind: npm

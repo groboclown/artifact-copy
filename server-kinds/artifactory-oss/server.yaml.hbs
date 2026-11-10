@@ -1,0 +1,46 @@
+# JFrog Artifactory.  The server url ends in '/artifactory/'; repositories
+# live under '{name}'.
+#
+# Credentials go on the server entry, never in this template.  Enumerating
+# needs them, even on an anonymously readable repository.  Each form below
+# works with a token; prefer 'env' or 'aws-secret' over 'text'.
+#
+# Access token, sent as 'Authorization: Bearer <token>':
+#
+#   authentication:
+#     kind: bearer
+#     token: { kind: env, name: ARTIFACTORY_TOKEN }
+#
+# Access token as the password of a basic login:
+#
+#   authentication:
+#     kind: basic
+#     username: { kind: env, name: ARTIFACTORY_USER }
+#     password: { kind: env, name: ARTIFACTORY_TOKEN }
+#
+# API key, sent as 'X-JFrog-Art-Api: <key>'.  JFrog deprecated API keys;
+# newer releases refuse them:
+#
+#   authentication:
+#     kind: bearer
+#     token: { kind: env, name: ARTIFACTORY_API_KEY }
+#     header: X-JFrog-Art-Api
+#     prefix: ""
+access: [read, write]
+
+# A bare "host:" renders null, which loading rejects; emit it only with values.
+{{#if values}}
+host:
+{{#if values.connect-timeout}}
+  connect-timeout: {{yaml values.connect-timeout}}
+{{/if}}
+{{#if values.request-timeout}}
+  request-timeout: {{yaml values.request-timeout}}
+{{/if}}
+{{#if values.maximum-concurrent-downloads}}
+  maximum-concurrent-downloads: {{yaml values.maximum-concurrent-downloads}}
+{{/if}}
+{{#if values.maximum-concurrent-uploads}}
+  maximum-concurrent-uploads: {{yaml values.maximum-concurrent-uploads}}
+{{/if}}
+{{/if}}

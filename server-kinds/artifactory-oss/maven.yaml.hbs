@@ -1,0 +1,22 @@
+# The protocol at {name}, told more by the storage API.
+source:
+  kind: artifactory
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: maven
+target:
+  kind: maven
+  host-path: {{yaml repository.name}}
+  options:
+    # OSS as admin overwrites a redeploy and reports success.
+    overwrite-guard: check
+# OSS refuses the sorted AQL the 'artifactory' enumerator pages with, so
+# this one pages by upload-time window.  AQL needs a login with read
+# permission, even on an anonymously readable repository, so a server
+# without 'authentication' is refused; option 'anonymous: attempt' overrides.
+enumerator:
+  kind: artifactory-oss
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: maven
+    anonymous: {{yaml values.anonymous}}

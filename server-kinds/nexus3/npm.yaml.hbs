@@ -1,0 +1,15 @@
+# The protocol at repository/{name}, told more by the REST API at the root.
+source:
+  kind: nexus
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: npm
+    max-listing-rows: {{yaml values.max-listing-rows}}
+target:
+  kind: npm
+  host-path: {{yaml (concat "repository/" repository.name)}}
+enumerator:
+  kind: nexus
+  options:
+    repository: {{yaml repository.name}}
+    ecosystem: npm

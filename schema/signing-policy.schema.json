@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/groboclown/artifact-copy/schema/signing-policy.schema.json",
+  "title": "Signing Policy",
+  "description": "Which PGP signing keys may vouch for which artifacts.\n\nThe configuration's 'signing-keys' supply key material; this file says whose signature counts for what.  A key the rules name vouches only for the artifacts those rules cover, and an artifact the rules cover is vouched for only by the keys they name.  A pinned key the file never mentions vouches for everything, as it does with no file at all; a key fetched from a keyserver vouches only where a rule names it, since a keyserver supplies material, not trust.  A valid signature by a key that does not vouch for the artifact reports 'signature-key-unvouched'.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema"
+  ],
+  "properties": {
+    "$schema": {
+      "description": "Must be this schema's identifier.",
+      "type": "string"
+    },
+    "$comment": {
+      "type": "string"
+    },
+    "$comments": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "rules": {
+      "title": "Key Assignments",
+      "description": "Every rule covering an artifact contributes its keys; order does not matter.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Rule"
+      }
+    }
+  },
+  "$defs": {
+    "Rule": {
+      "title": "Key Assignment",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "purl",
+        "fingerprints"
+      ],
+      "properties": {
+        "$comment": {
+          "type": "string"
+        },
+        "$comments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "purl": {
+          "description": "Which artifacts, as a purl whose name is a glob ('pkg:maven/org.apache.*/*') and whose version, when given, is a RANGE in the artifact's own ecosystem ('pkg:maven/org.example/lib@[2.0,)').  A purl naming no version covers every version.",
+          "type": "string",
+          "minLength": 1
+        },
+        "fingerprints": {
+          "description": "The primary-key fingerprints allowed to vouch for these artifacts: 40 hexadecimal digits for a version 4 key, 64 for version 6.  Spaces and a leading '0x' are ignored.  Short and long key ids are refused, since a key id can be forged where a fingerprint cannot.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 40
+          }
+        },
+        "justification": {
+          "description": "Where the assignment comes from: the project's KEYS file, a release announcement.",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

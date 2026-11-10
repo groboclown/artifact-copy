@@ -1,0 +1,122 @@
+description: Artifact Keeper
+server:
+  file: server.yaml.hbs
+  values:
+    type: object
+    additionalProperties: false
+    properties:
+      connect-timeout:
+        description: How long to wait for a connection, such as 30 or "2 min"; a bare number is seconds.
+        oneOf:
+          - type: number
+            minimum: 0
+            maximum: 31536000
+          - type: string
+            maxLength: 100
+      request-timeout:
+        description: How long to wait for a whole request, such as 30 or "2 min"; a bare number is seconds.
+        oneOf:
+          - type: number
+            minimum: 0
+            maximum: 31536000
+          - type: string
+            maxLength: 100
+      maximum-concurrent-downloads:
+        description: The most downloads from this server at once.
+        type: integer
+        minimum: 1
+        maximum: 100
+      maximum-concurrent-uploads:
+        description: The most uploads to this server at once.
+        type: integer
+        minimum: 1
+        maximum: 100
+repositories:
+  generic:
+    file: generic.yaml.hbs
+    roles: [source, target, enumerator]
+    values:
+      type: object
+      additionalProperties: false
+      properties:
+        mapping:
+          description: How raw paths become artifacts.
+          enum: [directory, as-is, name-version-file]
+          default: directory
+        overwrite-guard:
+          description: Who keeps a written path from being replaced; "check" compares before writing, for a repository with versioning enabled.
+          enum: [server, check]
+          default: server
+        last-download:
+          description: Where last-download times come from; "stats" costs one request per file.
+          enum: [unknown, stats]
+          default: unknown
+        mode:
+          description: 'What kind of repository this is. Absent or "hosted" is a hosted repository. "proxy" is a Remote whose cache decides which versions and files exist, with metadata and dependencies read through its protocol. "proxy-cache" is a Remote read from its cache alone: no dependencies or license, and no request that could reach its upstream.'
+          enum: [hosted, proxy, proxy-cache]
+        max-listing-rows:
+          description: The most rows one paged listing reads before giving up; raise it for a repository holding years of builds.
+          type: integer
+          minimum: 1
+          default: 20000
+  maven:
+    file: maven.yaml.hbs
+    roles: [source, target, enumerator]
+    values:
+      type: object
+      additionalProperties: false
+      properties:
+        last-download:
+          description: Where last-download times come from; "stats" costs one request per file.
+          enum: [unknown, stats]
+          default: unknown
+        mode:
+          description: 'What kind of repository this is. Absent or "hosted" is a hosted repository. "proxy" is a Remote whose cache decides which versions and files exist, with metadata and dependencies read through its protocol. "proxy-cache" is a Remote read from its cache alone: no dependencies or license, and no request that could reach its upstream.'
+          enum: [hosted, proxy, proxy-cache]
+        max-listing-rows:
+          description: The most rows one paged listing reads before giving up; raise it for a repository holding years of builds.
+          type: integer
+          minimum: 1
+          default: 20000
+  npm:
+    file: npm.yaml.hbs
+    roles: [source, target, enumerator]
+    values:
+      type: object
+      additionalProperties: false
+      properties:
+        last-download:
+          description: Where last-download times come from; "stats" costs one request per file.
+          enum: [unknown, stats]
+          default: unknown
+        mode:
+          description: 'What kind of repository this is. Absent or "hosted" is a hosted repository. "proxy" is a Remote whose cache decides which versions and files exist, with metadata and dependencies read through its protocol. "proxy-cache" is a Remote read from its cache alone: no dependencies or license, and no request that could reach its upstream.'
+          enum: [hosted, proxy, proxy-cache]
+        max-listing-rows:
+          description: The most rows one paged listing reads before giving up; raise it for a repository holding years of builds.
+          type: integer
+          minimum: 1
+          default: 20000
+  pypi:
+    file: pypi.yaml.hbs
+    roles: [source, target, enumerator]
+    values:
+      type: object
+      additionalProperties: false
+      properties:
+        legacy-dists:
+          description: How to manage legacy distributions.
+          enum: ["error", "skip", "guess"]
+          default: error
+        last-download:
+          description: Where last-download times come from; "stats" costs one request per file.
+          enum: [unknown, stats]
+          default: unknown
+        mode:
+          description: 'What kind of repository this is. Absent or "hosted" is a hosted repository. "proxy" is a Remote whose cache decides which versions and files exist, with metadata and dependencies read through its protocol. "proxy-cache" is a Remote read from its cache alone: no dependencies or license, and no request that could reach its upstream.'
+          enum: [hosted, proxy, proxy-cache]
+        max-listing-rows:
+          description: The most rows one paged listing reads before giving up; raise it for a repository holding years of builds.
+          type: integer
+          minimum: 1
+          default: 20000
