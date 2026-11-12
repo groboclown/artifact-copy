@@ -1,4 +1,7 @@
 source:
   kind: pypi
+{{#if values.minimum-publish-time}}
+  minimum-publish-time: {{yaml values.minimum-publish-time}}
+{{/if}}
 enumerator:
   kind: pypi-simple
