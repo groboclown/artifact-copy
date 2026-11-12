@@ -221,6 +221,41 @@ mod tests {
     use crate::ecosystem::Npm;
     use crate::model::Release;
 
+    /// `repo::resolve::respecified` reads an `Exact`'s text back through
+    /// the source's handler, so every handler must answer `Exact` for the
+    /// text it put there. PEP 440 once did not: `==26.2.2` became
+    /// `Exact("26.2.2")`, and `26.2.2` then read as a range matching
+    /// nothing, so every pinned PyPI request was unresolvable.
+    #[test]
+    fn exact_text_reads_back_exact() {
+        let samples = [
+            "1.0", "1.0.0", "2.31.0", "26.2.2", "==26.2.2", "==1.0", "4.17.21", "1.0-SNAPSHOT",
+            "v1.2.3", "^4.17.0", ">=2,<3", "[1.0,2.0)",
+        ];
+
+        let handlers: Vec<(String, Arc<dyn VersionHandler>)> = kinds()
+            .iter()
+            .map(|kind| (format!("version {kind}"), open(kind).expect("opens")))
+            .chain(crate::ecosystem::kinds().iter().map(|kind| {
+                let ecosystem = crate::ecosystem::open(kind).expect("opens");
+                let handler: Arc<dyn VersionHandler> = ecosystem;
+                (format!("ecosystem {kind}"), handler)
+            }))
+            .collect();
+
+        for (name, handler) in &handlers {
+            for text in samples {
+                if let VersionSpec::Exact(exact) = handler.version_spec(text) {
+                    assert_eq!(
+                        handler.version_spec(&exact),
+                        VersionSpec::Exact(exact.clone()),
+                        "{name}: {text:?} read as Exact({exact:?}), which does not read back"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn every_advertised_kind_opens() {
         for kind in kinds() {

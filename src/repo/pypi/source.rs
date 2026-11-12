@@ -984,6 +984,30 @@ mod tests {
         assert_eq!(artifact.version_text(), Some("2.31.0"));
     }
 
+    /// A pin parsed as a user writes it, `requests==2.31.0`, resolves to
+    /// that version. Resolution re-reads the exact text through the
+    /// handler, which once turned every pin into a range matching nothing.
+    #[tokio::test]
+    async fn resolution_takes_pinned_version() {
+        let f = fixture();
+        let ctx = ctx();
+
+        let request = f
+            .subject
+            .ecosystem(&id("requests"))
+            .expect("ecosystem")
+            .parse_req("requests==2.31.0")
+            .expect("parsed");
+
+        let artifact = f
+            .subject
+            .resolve(&request, Criteria::new(PreRelease::Exclude), &ctx)
+            .await
+            .expect("resolved");
+
+        assert_eq!(artifact.version_text(), Some("2.31.0"));
+    }
+
     /// Trimmed from what Nexus 3.41 answers to the PEP 691 header.
     const SIMPLE_HTML: &str = r#"<!DOCTYPE html>
 <html lang="en">
