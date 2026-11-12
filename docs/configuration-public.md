@@ -16,6 +16,20 @@ servers:
 
 `--from=central`, `--from=npmjs`, and `--from=pypi-org` then name them. To publish to a public registry, use its native tools.
 
+## Publish window
+
+Each kind takes a `minimum-publish-time` value, passed through to its source's [`minimum-publish-time`](configuration-server.md#publish-time): an artifact published more recently than this is refused as `publish-too-recent`. Absent means no window.
+
+```yaml
+servers:
+  pypi-org:
+    kind: public-pypi.org
+    values:
+      minimum-publish-time: 7 days
+```
+
+It is a value rather than a server key: `minimum-publish-time` directly under the server is refused by the schema.
+
 ## Being a good citizen
 
 Public registries are shared infrastructure, run for free or at a vendor's expense. Each publishes terms of use, and each can throttle or block a client that strains it. The tool's defaults follow their guidance; keep them.
@@ -92,8 +106,8 @@ Each server generates a [host](configuration-low-level.md#hosts) named for its a
 
 | Server kind | Host | [Source](configuration-low-level.md#source-kinds) | [Enumerator](configuration-low-level.md#enumerator-kinds) |
 | --- | --- | --- | --- |
-| `maven-central` | `https://repo1.maven.org/maven2/`, `maximum-concurrent-downloads: 1`, retry `429: {honor-retry-after: true}`, a mirror per `mirrors` value with `skip: ["*/"]` | `maven`, with `file-listing` and `version-discovery` set to `html-index`, and a 24 hour `maven-metadata.xml*` freshness rule | none |
-| `npmjs` | `https://registry.npmjs.org/` | `npm` | none |
-| `public-pypi.org` | `https://pypi.org/`, additional host `files.pythonhosted.org` | `pypi` | `pypi-simple` |
+| `maven-central` | `https://repo1.maven.org/maven2/`, `maximum-concurrent-downloads: 1`, retry `429: {honor-retry-after: true}`, a mirror per `mirrors` value with `skip: ["*/"]` | `maven`, with `file-listing` and `version-discovery` set to `html-index`, a 24 hour `maven-metadata.xml*` freshness rule, and `minimum-publish-time` from its value | none |
+| `npmjs` | `https://registry.npmjs.org/` | `npm`, with `minimum-publish-time` from its value | none |
+| `public-pypi.org` | `https://pypi.org/`, additional host `files.pythonhosted.org` | `pypi`, with `minimum-publish-time` from its value | `pypi-simple` |
 
 None generates a target. The templates live in [server-kinds/](../server-kinds/).

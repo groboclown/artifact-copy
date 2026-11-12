@@ -13,6 +13,14 @@ server:
             maximum: 31536000
           - type: string
             maxLength: 100
+      minimum-publish-time:
+        description: Refuse an artifact published more recently than this, such as "7 days"; a bare number is seconds.  Passed through to the source's minimum-publish-time.
+        oneOf:
+          - type: number
+            minimum: 0
+            maximum: 31536000
+          - type: string
+            maxLength: 100
       request-timeout:
         description: How long to wait for a whole request, such as 30 or "2 min"; a bare number is seconds.
         oneOf:

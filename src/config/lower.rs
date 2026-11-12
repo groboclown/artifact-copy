@@ -251,6 +251,37 @@ mod tests {
         assert_eq!(rules[0]["fresh-for"], "24 hours", "{document}");
     }
 
+    /// Each public registry kind passes its `minimum-publish-time` value to
+    /// its source, and writes none when the value is absent.
+    #[test]
+    fn public_kinds_pass_minimum_publish_time() {
+        for kind in ["npmjs", "public-pypi.org", "maven-central"] {
+            let mut document = serde_json::json!({
+                "servers": {
+                    "public": { "kind": kind, "values": { "minimum-publish-time": "5 days" } },
+                },
+            });
+
+            lower(&mut document, &Origins::new(), unanchored).expect("lowered");
+
+            assert_eq!(
+                document["sources"]["public"]["minimum-publish-time"], "5 days",
+                "{kind}: {document}"
+            );
+
+            let mut bare = serde_json::json!({
+                "servers": { "public": { "kind": kind } },
+            });
+
+            lower(&mut bare, &Origins::new(), unanchored).expect("lowered");
+
+            assert!(
+                bare["sources"]["public"].get("minimum-publish-time").is_none(),
+                "{kind}: {bare}"
+            );
+        }
+    }
+
     /// The host `maven-central` lowers to, given `values`.
     fn central_host(values: Value) -> Value {
         let mut document = serde_json::json!({

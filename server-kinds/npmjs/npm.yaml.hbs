@@ -1,2 +1,5 @@
 source:
   kind: npm
+{{#if values.minimum-publish-time}}
+  minimum-publish-time: {{yaml values.minimum-publish-time}}
+{{/if}}

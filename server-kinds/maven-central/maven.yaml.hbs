@@ -1,5 +1,8 @@
 source:
   kind: maven
+{{#if values.minimum-publish-time}}
+  minimum-publish-time: {{yaml values.minimum-publish-time}}
+{{/if}}
   options:
     # One request per version for the files the POM does not name:
     # classifiers, Gradle's .module, SBOMs.  Inspection, not enumeration.
