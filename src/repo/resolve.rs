@@ -188,7 +188,11 @@ pub(super) async fn resolve<S: Source + ?Sized>(
 /// The ecosystem parsed the request, and raw reads every `@x` as exact. A
 /// source whose versions are semver means `tool@24` as the newest `24.x.y`,
 /// and `tool@24.1.0` stays exact. A registry ecosystem parsed with the
-/// handler's own rules already, so re-reading changes nothing there.
+/// handler's own rules already, so re-reading changes nothing there --
+/// **provided** every handler reads an `Exact`'s text back as `Exact`.
+/// PEP 440 strips `==` on the first read, so its `version_spec` must take
+/// a bare version as exact too; `version::tests::exact_text_reads_back_exact`
+/// holds every handler to it.
 fn respecified(request: &ArtifactRequest, versions: &dyn VersionHandler) -> ArtifactRequest {
     let VersionSpec::Exact(text) = &request.spec else {
         return request.clone();

@@ -131,6 +131,13 @@ fn classify_spec(spec: &str) -> VersionSpec {
         return VersionSpec::Exact(exact.trim().to_owned());
     }
 
+    // A bare version is what an `Exact` holds once `==` is stripped, and
+    // `repo::resolve::respecified` reads it back through here. PEP 440 has
+    // no bare-version specifier, so read as a range it would match nothing.
+    if parse_version(spec).is_some() {
+        return VersionSpec::Exact(spec.trim().to_owned());
+    }
+
     VersionSpec::Range(spec.to_owned())
 }
 
@@ -175,6 +182,29 @@ mod tests {
 
         // A post release is a release.
         assert_eq!(by_text("1.0.post1"), Release::General);
+    }
+
+    /// A pin loses its `==` on the first read and is read again by
+    /// resolution, so the bare version must still be exact.
+    #[test]
+    fn version_spec_exact_reads_back() {
+        let pinned = Pep440Versions.version_spec("==26.2.2");
+        assert_eq!(pinned, VersionSpec::Exact("26.2.2".into()));
+
+        assert_eq!(
+            Pep440Versions.version_spec("26.2.2"),
+            VersionSpec::Exact("26.2.2".into())
+        );
+
+        // Still ranges: a wildcard, and anything with an operator.
+        assert_eq!(
+            Pep440Versions.version_spec("==1.2.*"),
+            VersionSpec::Range("==1.2.*".into())
+        );
+        assert_eq!(
+            Pep440Versions.version_spec(">=1.0"),
+            VersionSpec::Range(">=1.0".into())
+        );
     }
 
     #[test]
