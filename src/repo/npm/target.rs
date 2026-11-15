@@ -14,11 +14,11 @@ use crate::core::error::{Error, Result};
 use crate::ecosystem::{Companion, Ecosystem, Npm};
 use crate::ext::{ExtHost, Options};
 use crate::model::{ArtifactId, ResolvedArtifact, Version, VersionSpec};
-use crate::net::{ByteLimit, Req, encode_unreserved, normalized_base};
+use crate::net::{ByteLimit, Req, normalized_base};
 use crate::repo::{Companions, Delivered, Delivery, Target};
 use crate::version::{PreRelease, VersionHandler};
 
-use super::{manifest, package_name, publish};
+use super::{manifest, package_name, package_path, publish, tarball_name};
 /// Publishing to an npm registry.
 ///
 /// One `PUT` per version, which is what `npm publish` does and what every
@@ -63,6 +63,18 @@ pub struct NpmTarget {
 /// exists once per run.
 const PUBLISH_STRIPES: usize = 64;
 
+/// Whether a version document's status leaves the question open: Nexus
+/// serves no version documents, answering 400 for a scoped package and
+/// 404 even for an unscoped one it holds.
+fn unanswered(status: StatusCode) -> bool {
+    status == StatusCode::NOT_FOUND || status == StatusCode::BAD_REQUEST
+}
+
+/// The abbreviated packument, with a fallback to the full one for
+/// registries that do not serve it.
+const ABBREVIATED_PACKUMENT: &str =
+    "application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*";
+
 impl NpmTarget {
     /// No HTTP client, for the same reason [`NpmSource`](super::NpmSource) has none: every
     /// request goes through `host`, which confines it to the host it was
@@ -91,6 +103,50 @@ impl NpmTarget {
     pub fn tagging(mut self, dist_tags: DistTags) -> Self {
         self.dist_tags = dist_tags;
         self
+    }
+
+    /// The registry URL for a package, spelled as npm's own client spells
+    /// it -- `@scope%2fname` -- since that is the one spelling every
+    /// registry is known to accept.
+    fn package_url(&self, id: &ArtifactId) -> String {
+        format!("{}/{}", self.base_url, package_path(id))
+    }
+
+    /// Whether the package's packument lists `version`.
+    ///
+    /// The last resort, for registries that route neither version
+    /// documents nor conventional tarball paths; see [`NpmTarget::exists`]. Asks for the abbreviated packument, which
+    /// registries that support it serve at a fraction of the size, and
+    /// which carries `versions` just the same. Read fresh every time rather
+    /// than from the source's cache: this run's own publishes change it.
+    ///
+    /// A 404 here is a package the registry has never seen, so certainly
+    /// not this version of it.
+    async fn listed(&self, id: &ArtifactId, version: &Version, ctx: &Ctx) -> Result<bool> {
+        /// Only the keys matter, so the entries are not even parsed.
+        #[derive(serde::Deserialize)]
+        struct Listing {
+            #[serde(default)]
+            versions: BTreeMap<String, serde::de::IgnoredAny>,
+        }
+
+        let req = Req::get(self.package_url(id)).header("accept", ABBREVIATED_PACKUMENT);
+
+        match crate::ext::fetch_json::<Listing>(
+            &*self.host,
+            &req,
+            ByteLimit::PACKUMENT,
+            "npm packument",
+            ctx,
+        )
+        .await
+        {
+            Ok(listing) => Ok(listing.versions.contains_key(version.text())),
+
+            Err(Error::HttpStatus { status, .. }) if status == StatusCode::NOT_FOUND => Ok(false),
+
+            Err(err) => Err(err),
+        }
     }
 
     /// The lock covering one package's read-then-publish.
@@ -245,7 +301,7 @@ impl NpmTarget {
         let url = format!(
             "{}/-/package/{}/dist-tags",
             self.base_url,
-            encode_unreserved(&package_name(id))
+            package_path(id)
         );
 
         let tags: BTreeMap<String, String> = match crate::ext::fetch_json(
@@ -323,28 +379,56 @@ impl Target for NpmTarget {
 
     /// Whether the registry already serves this exact version.
     ///
-    /// Asked of the **version document** rather than the packument: a
-    /// packument for a popular package is megabytes, and this question is
-    /// asked once per artifact in a migration that may run to millions.
+    /// Asked with `HEAD`s, never the packument while anything cheaper
+    /// answers: a packument for a popular package is megabytes, and this
+    /// question is asked once per artifact in a migration that may run to
+    /// millions.
     ///
-    /// A 404 is the answer "no", not a failure -- which is why it is caught
-    /// here rather than propagated. Any other failure is propagated: a
-    /// registry that is unreachable has not told us the version is absent,
-    /// and treating that as "no" would republish everything.
+    /// 1. The **version document**. A success is a "yes".
+    /// 2. **Not every registry serves version documents.** Nexus answers
+    ///    400 for a scoped package and 404 for an unscoped one *it holds*,
+    ///    so neither is a "no". The **tarball** settles it: present is a
+    ///    "yes", 404 a "no".
+    /// 3. Only a registry that refuses the tarball path too is asked for
+    ///    the packument, which every registry serves because `npm install`
+    ///    needs it.
+    ///
+    /// Any other failure is propagated: a registry that is unreachable has
+    /// not told us the version is absent, and treating that as "no" would
+    /// republish everything.
     async fn exists(&self, id: &ArtifactId, version: Option<&Version>, ctx: &Ctx) -> Result<bool> {
         let version = crate::repo::version_required(id, version)?;
 
-        let url = format!(
-            "{}/{}/{}",
-            self.base_url,
-            encode_unreserved(&package_name(id)),
-            version.text()
+        let document = format!("{}/{}", self.package_url(id), version.text());
+
+        match self.host.head(&Req::head(&document), ctx).await {
+            Ok(_) => return Ok(true),
+
+            Err(Error::HttpStatus { status, .. }) if unanswered(status) => {}
+
+            Err(err) => return Err(err),
+        }
+
+        // The tarball at npm's conventional address: one HEAD, no body,
+        // and an exact answer wherever the convention holds -- which is
+        // every registry this tool publishes to, since `publish` writes the
+        // same address into the document.
+        let tarball = format!(
+            "{}/-/{}",
+            self.package_url(id),
+            tarball_name(id, version.text())
         );
 
-        match self.host.head(&Req::head(&url), ctx).await {
+        match self.host.head(&Req::head(&tarball), ctx).await {
             Ok(_) => Ok(true),
 
             Err(Error::HttpStatus { status, .. }) if status == StatusCode::NOT_FOUND => Ok(false),
+
+            // A registry that does not route that layout at all: only the
+            // packument is left to ask.
+            Err(Error::HttpStatus { status, .. }) if status == StatusCode::BAD_REQUEST => {
+                self.listed(id, version, ctx).await
+            }
 
             Err(err) => Err(err),
         }
@@ -405,11 +489,7 @@ impl Target for NpmTarget {
                 .as_deref(),
         )?;
 
-        let url = format!(
-            "{}/{}",
-            self.base_url,
-            encode_unreserved(&package_name(&artifact.id))
-        );
+        let url = self.package_url(&artifact.id);
 
         self.host
             .send_file(
@@ -506,6 +586,117 @@ mod tests {
             .expect("asked");
 
         assert!(!present);
+    }
+
+    async fn ask(f: &Fixture<NpmTarget>, id: &ArtifactId, version: &str) -> Result<bool> {
+        let ctx = ctx();
+        let version = Version::new(version, Release::General);
+
+        f.subject.exists(id, Some(&version), &ctx).await
+    }
+
+    /// Nexus answers 400 for a scoped package's version document; the
+    /// tarball settles it with a HEAD, at the `@scope%2fname` spelling,
+    /// and the packument is never read.
+    #[tokio::test]
+    async fn exists_scoped_version_document_refused_tarball_present() {
+        let scoped = ArtifactId::new(EcosystemId::npm(), Some("@fish"), "tuna");
+        let f = target(
+            FixtureClient::new()
+                .with(
+                    format!("{MIRROR}/@fish%2ftuna/1.2.0"),
+                    Canned::status(StatusCode::BAD_REQUEST),
+                )
+                .with_body(format!("{MIRROR}/@fish%2ftuna/-/tuna-1.2.0.tgz"), "bytes"),
+        );
+
+        assert!(ask(&f, &scoped, "1.2.0").await.expect("asked"));
+        assert_eq!(f.host.hits(&format!("{MIRROR}/@fish%2ftuna")), 0);
+    }
+
+    /// Nexus answers 404 for the version document of an unscoped package
+    /// it holds, so a 404 there is not yet a "no".
+    #[tokio::test]
+    async fn exists_version_document_missing_tarball_present() {
+        let f = target(
+            FixtureClient::new()
+                .with(
+                    format!("{MIRROR}/tuna/1.2.0"),
+                    Canned::status(StatusCode::NOT_FOUND),
+                )
+                .with_body(format!("{MIRROR}/tuna/-/tuna-1.2.0.tgz"), "bytes"),
+        );
+
+        assert!(ask(&f, &id(), "1.2.0").await.expect("asked"));
+    }
+
+    /// No tarball is a "no", without reading the packument -- which is the
+    /// common case in a migration, and the one a packument makes costly.
+    #[tokio::test]
+    async fn exists_tarball_missing_absent_without_packument() {
+        let f = target(
+            FixtureClient::new()
+                .with(
+                    format!("{MIRROR}/tuna/9.9.9"),
+                    Canned::status(StatusCode::BAD_REQUEST),
+                )
+                .with_body(
+                    format!("{MIRROR}/tuna"),
+                    r#"{"name":"tuna","versions":{"9.9.9":{}}}"#,
+                ),
+        );
+
+        assert!(!ask(&f, &id(), "9.9.9").await.expect("asked"));
+        assert_eq!(f.host.hits(&format!("{MIRROR}/tuna")), 0);
+    }
+
+    /// A registry routing neither path is asked for the packument.
+    #[tokio::test]
+    async fn exists_tarball_refused_packument_decides() {
+        let f = target(
+            FixtureClient::new()
+                .with(
+                    format!("{MIRROR}/tuna/1.2.0"),
+                    Canned::status(StatusCode::BAD_REQUEST),
+                )
+                .with(
+                    format!("{MIRROR}/tuna/-/tuna-1.2.0.tgz"),
+                    Canned::status(StatusCode::BAD_REQUEST),
+                )
+                .with(
+                    format!("{MIRROR}/tuna/9.9.9"),
+                    Canned::status(StatusCode::BAD_REQUEST),
+                )
+                .with(
+                    format!("{MIRROR}/tuna/-/tuna-9.9.9.tgz"),
+                    Canned::status(StatusCode::BAD_REQUEST),
+                )
+                .with_body(
+                    format!("{MIRROR}/tuna"),
+                    r#"{"name":"tuna","versions":{"1.2.0":{}}}"#,
+                ),
+        );
+
+        assert!(ask(&f, &id(), "1.2.0").await.expect("asked"));
+        assert!(!ask(&f, &id(), "9.9.9").await.expect("asked"));
+    }
+
+    /// The fallbacks do not turn a failing registry into a "no" either.
+    #[tokio::test]
+    async fn exists_tarball_unreachable_not_absent() {
+        let f = target(
+            FixtureClient::new()
+                .with(
+                    format!("{MIRROR}/tuna/1.2.0"),
+                    Canned::status(StatusCode::NOT_FOUND),
+                )
+                .with(
+                    format!("{MIRROR}/tuna/-/tuna-1.2.0.tgz"),
+                    Canned::status(StatusCode::SERVICE_UNAVAILABLE),
+                ),
+        );
+
+        assert!(ask(&f, &id(), "1.2.0").await.is_err());
     }
 
     /// Anything else propagates. A registry that is unreachable has not
