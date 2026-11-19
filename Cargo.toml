@@ -49,7 +49,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 url = "2.5.8"
 wasmtime = { version = "50.0.1", default-features = false, features = ["cranelift", "async", "runtime", "std"] }
 wasmtime-wasi = { version = "50.0.1", default-features = false, features = ["p1"] }
-zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 rand = "0.8"
