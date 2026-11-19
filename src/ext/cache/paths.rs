@@ -142,6 +142,7 @@ mod tests {
     use super::*;
     use crate::ext::cache::testing::*;
 
+    #[cfg(unix)]
     use crate::net::ByteLimit;
 
     #[test]
