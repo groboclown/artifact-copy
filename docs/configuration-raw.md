@@ -34,8 +34,8 @@ On Nexus and Artifact Keeper, a `raw` or `generic` repository entry may point at
 | `as-is` | the file itself | none | artifact `tools/acme/cli/1.2.0/cli.tar.gz` |
 | `name-version-file` | everything before the last two segments | the second to last segment | artifact `tools/acme/cli`, version `1.2.0`, file `cli.tar.gz` |
 
-- `directory` is the default, except on `ivy`. Each directory is its own artifact: `a/b` and `a/b/c` are two. A file at the repository root is its own artifact.
-- `as-is` suits a repository of unrelated files, such as a backup dump.
+- `directory` is the default, except on `ivy`. Each directory is its own artifact: `a/b` and `a/b/c` are two. A file at the repository root is its own artifact. A versioned artifact written to it, such as a GitHub release or an extension source's artifact, gets a directory of its own: `tools/cli@1.2.0` lands at `tools/cli/1.2.0/`, which reads back as the unversioned artifact `tools/cli/1.2.0`.
+- `as-is` suits a repository of unrelated files, such as a backup dump. A versioned artifact cannot be written to it.
 - `name-version-file` is the default on `ivy`. A path with fewer than three segments does not fit and is reported. Only this mapping has versions, so only it accepts a [version handler](#versions).
 
 ### Requests

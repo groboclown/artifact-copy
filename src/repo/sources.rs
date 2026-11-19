@@ -284,8 +284,10 @@ impl<'c> Sources<'c> {
         // An extension kind goes to the gearing, reaching only this host.
         if let Some(extension) = self.config.extensions.get(&declared.kind) {
             let gear = crate::ext::gear::launch(&declared.kind, extension)?;
+            let names = NameMap::parse(&declared.names)?;
             let source =
-                super::extension::ExtensionSource::open(gear, &base_url, options, capability)?;
+                super::extension::ExtensionSource::open(gear, &base_url, options, capability)?
+                    .naming(names);
 
             return Ok(Arc::new(
                 super::Bound::new(Arc::new(source)).reading_versions(declared.versions()?),

@@ -1,0 +1,54 @@
+name: PR Validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  validate:
+    name: validate (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            extensions/guest-kit -> target
+            extensions/nodejs-releases -> target
+            extensions/corretto-releases -> target
+
+      - name: Ensure make is available (Windows)
+        if: runner.os == 'Windows'
+        run: command -v make || choco install make -y
+
+      - name: fmt-check
+        run: make fmt-check
+      - name: lint
+        run: make lint
+      - name: test
+        run: make test
+      - name: doc
+        run: make doc
+      - name: installer
+        run: make installer

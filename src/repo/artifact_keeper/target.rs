@@ -27,9 +27,7 @@ use crate::ecosystem::Ecosystem;
 use crate::ext::{ExtHost, Options};
 use crate::model::{ArtifactId, DigestAlg, ResolvedArtifact, Version};
 use crate::net::{Req, encode_unreserved, normalized_base};
-use crate::repo::{
-    Companions, Coordinate, Delivered, Delivery, Mapping, OverwriteGuard, PageCap, Target,
-};
+use crate::repo::{Companions, Delivered, Delivery, Mapping, OverwriteGuard, PageCap, Target};
 
 use super::{MAPPING, PAGE_LIMIT, PER_PAGE, encode_path, page_cap, prefix_of, repository_url};
 
@@ -118,27 +116,18 @@ impl ArtifactKeeperGenericTarget {
     /// `name-version-file` artifact with no version, and several files of
     /// an `as-is` artifact that would all land on one path.
     fn path_for(&self, id: &ArtifactId, version: Option<&Version>, file: &str) -> Result<String> {
-        let at = Coordinate {
-            name: id.name().trim_matches('/').to_owned(),
-            version: version.map(|version| version.text().to_owned()),
-            file: file.to_owned(),
-        };
+        let version = version.map(Version::text);
 
-        let path = self.mapping.path(&at);
-
-        if at.name.is_empty() || file.is_empty() || self.mapping.read(&path).as_ref() != Some(&at) {
-            return Err(Error::BadRequest {
+        self.mapping
+            .place(id.name(), version, file)
+            .map_err(|detail| Error::BadRequest {
                 ecosystem: "raw",
-                text: id.purl(),
-                detail: format!(
-                    "file {file:?} would be written to {path:?}, which the {} mapping \
-                     does not read back as this artifact",
-                    self.mapping.as_str()
-                ),
-            });
-        }
-
-        Ok(path)
+                text: match version {
+                    Some(version) => id.purl_at(version),
+                    None => id.purl(),
+                },
+                detail,
+            })
     }
 
     /// What the server holds at a file's path.
@@ -339,6 +328,10 @@ impl Target for ArtifactKeeperGenericTarget {
         if self.mapping == Mapping::NameVersionFile {
             crate::repo::version_required(id, version)?;
         }
+
+        // Where `place` puts it: under `directory`, a version's own directory.
+        let (id, version) = self.mapping.stored_artifact(id, version);
+        let (id, version) = (&id, version.as_ref());
 
         let name = id.name().trim_matches('/');
         let wanted = version.map(Version::text);
@@ -1043,6 +1036,32 @@ mod tests {
             .expect("asked");
 
         assert!(present);
+    }
+
+    /// Under `directory`, a version is asked for in its own directory, where
+    /// `path_for` put it.
+    #[tokio::test]
+    async fn exists_version_folded_under_directory() {
+        let ctx = ctx();
+        let host = Arc::new(TestHost::new(FixtureClient::new().with_body(
+            listing("amazon/corretto/8.1", 1),
+            page(&["amazon/corretto/8.1/jdk.tar.gz"], false),
+        )));
+        let target = target("directory", host.clone());
+        let version = Version::new("8.1", Release::General);
+
+        assert_eq!(
+            target
+                .path_for(&id("amazon/corretto"), Some(&version), "jdk.tar.gz")
+                .expect("placed"),
+            "amazon/corretto/8.1/jdk.tar.gz"
+        );
+        assert!(
+            target
+                .exists(&id("amazon/corretto"), Some(&version), &ctx)
+                .await
+                .expect("asked")
+        );
     }
 
     /// A repository that is not there is not an absent artifact: treating

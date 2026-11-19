@@ -212,6 +212,26 @@ impl NameMap {
             .collect()
     }
 
+    /// Every source name a rule maps to artifact `name`, once each, in rule
+    /// order. Empty when no rule names it.
+    ///
+    /// For a source that lists versions per source name and merges them,
+    /// rather than refusing a versionless request two rules share.
+    pub fn sources_for(&self, name: &str) -> Vec<&str> {
+        let mut sources: Vec<&str> = Vec::new();
+
+        for rule in self.rules.iter().filter(|rule| rule.to_name == name) {
+            if !sources
+                .iter()
+                .any(|known| self.same_source(known, &rule.from_name))
+            {
+                sources.push(&rule.from_name);
+            }
+        }
+
+        sources
+    }
+
     /// The source name and tag a request for `name` at `version` reads.
     ///
     /// ```text

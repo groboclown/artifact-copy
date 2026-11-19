@@ -640,7 +640,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                r#"{{"$schema":"{}","setup":{{"cache-dir":"{}"}},
+                r#"{{"$schema":"{}","setup":{{"cache-dir":{}}},
                     "hosts":{{
                       "origin":{{"url":"{ORIGIN}/"}},
                       "mirror":{{"url":"{MIRROR}/"}}
@@ -648,7 +648,7 @@ mod tests {
                     "sources":{{"upstream":{{"kind":"npm","host":"origin"}}}},
                     "targets":{{"local":{{"kind":"npm","host":"mirror"}}}}}}"#,
                 crate::cli::config_schema_id(),
-                dir.join("scratch").display(),
+                serde_json::to_string(&dir.join("scratch")).expect("a path"),
             ),
         )
         .expect("written");
@@ -806,7 +806,7 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                r#"{{"$schema":"{}","setup":{{"cache-dir":"{}"}},
+                r#"{{"$schema":"{}","setup":{{"cache-dir":{}}},
                     "hosts":{{
                       "origin":{{"url":"{ORIGIN}/"}},
                       "mirror":{{"url":"{MIRROR}/"}}
@@ -814,7 +814,7 @@ mod tests {
                     "sources":{{"upstream":{{"kind":"pypi","host":"origin"}}}},
                     "targets":{{"local":{{"kind":"pypi","host":"mirror","options":{options}}}}}}}"#,
                 crate::cli::config_schema_id(),
-                dir.join("scratch").display(),
+                serde_json::to_string(&dir.join("scratch")).expect("a path"),
             ),
         )
         .expect("written");

@@ -321,10 +321,20 @@ mod tests {
         let downloaded = source.download(file, &expect, &ctx).await.expect("copied");
 
         assert_eq!(std::fs::read(&downloaded.path).expect("read"), b"zip");
+
+        // The cache canonicalizes its root, which on Windows is a verbatim
+        // `\\?\` path, so the expectation must be canonical too.
+        let cache_root = directory
+            .dir
+            .path()
+            .join("cache")
+            .canonicalize()
+            .expect("cache root");
+
         assert!(
-            downloaded
-                .path
-                .starts_with(directory.dir.path().join("cache"))
+            downloaded.path.starts_with(&cache_root),
+            "{:?}",
+            downloaded.path
         );
     }
 }

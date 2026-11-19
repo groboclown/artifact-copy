@@ -1,0 +1,139 @@
+# Builds the release installers for every supported platform.
+#
+# Run by hand from the Actions tab ("Run workflow").  Each platform's
+# installer tarball is uploaded as a workflow artifact, and a final job
+# gathers them with a SHA256SUMS file.
+#
+# Publishing is commented out at the bottom; see the notes there.
+
+name: Release Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish under (e.g. v0.1.0).  Only used by the publish job."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux: cross-compiled with cargo-zigbuild (see Makefile ZIG_TARGETS),
+          # which handles the C dependencies (aws-lc, ring, sqlite) for every
+          # glibc and musl target from one x86_64 runner.
+          - { target: x86_64-unknown-linux-gnu,   os: ubuntu-latest, zig: true }
+          - { target: aarch64-unknown-linux-gnu,  os: ubuntu-latest, zig: true }
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest, zig: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-latest, zig: true }
+          # macOS: needs the Apple SDK, so built on a Mac.  The arm64 runner
+          # builds the x86_64 target too; Xcode ships both architectures.
+          - { target: aarch64-apple-darwin,       os: macos-latest }
+          - { target: x86_64-apple-darwin,        os: macos-latest }
+          # Windows: built natively on each architecture's runner.
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest }
+          - { target: aarch64-pc-windows-msvc,    os: windows-11-arm }
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}, wasm32-wasip1
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+          workspaces: |
+            . -> target
+            extensions/guest-kit -> target
+            extensions/nodejs-releases -> target
+            extensions/corretto-releases -> target
+
+      - uses: mlugg/setup-zig@v2
+        if: matrix.zig
+
+      - uses: taiki-e/install-action@v2
+        if: matrix.zig
+        with:
+          tool: cargo-zigbuild
+
+      - name: Ensure make is available (Windows)
+        if: runner.os == 'Windows'
+        run: command -v make || choco install make -y
+
+      # build-cross-release picks cargo-zigbuild or plain cargo per target.
+      - name: Build executable
+        run: make build-cross-release RELEASE_TARGETS="${{ matrix.target }}"
+
+      - name: Build extensions
+        run: make build-release-extensions
+
+      - name: Construct installer
+        run: ./build-scripts/mk-installer.sh "${{ matrix.target }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.target }}
+          path: target/artifact-copy-*_${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  collect:
+    name: collect installers
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.tar.gz | tee SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-installers
+          path: dist/*
+          if-no-files-found: error
+
+  # -------------------------------------------------------------------
+  # Publishing.  Uncomment to publish the files that the `collect` job gathered.
+  
+  # The release is created as a draft so it can be reviewed before it goes public.
+  #
+  # publish-github:
+  #   name: publish GitHub release
+  #   needs: collect
+  #   if: inputs.tag != ''
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: write
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: release-installers
+  #         path: dist
+  #
+  #     - uses: softprops/action-gh-release@v2
+  #       with:
+  #         tag_name: ${{ inputs.tag }}
+  #         target_commitish: ${{ github.sha }}
+  #         draft: true
+  #         generate_release_notes: true
+  #         files: dist/*

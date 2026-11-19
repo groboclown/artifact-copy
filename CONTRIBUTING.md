@@ -52,6 +52,5 @@ Follow this handy-dandy checklist:
 
 1. Prepare the release notes.
 2. Update the changelog.
-3. Bump the version number.
-4. Build the installer zips for each supported platform (`make installer` or `make installer-cross`).  Should be done through GitHub Actions.
-5. Push the GitHub release with the version number and release notes.
+3. Bump the version number in `Cargo.toml`.
+4. Run the `release-build` GitHub action with the `vVERSION` tag.

@@ -615,7 +615,7 @@
           ]
         },
         "names": {
-          "description": "How this repository's names become the artifacts a request names.  Only 'github' reads it.\n\nA request names the 'to' side, and that is the artifact's only identity: in the report, in quarantine rules, and on the target.  A repository a rule names is reachable only through its rules, and its tags no rule admits are hidden, so one release cannot land under two names.  A repository no rule names keeps its own name.\n\nEvery rule is consulted.  A request more than one rule admits is refused as ambiguous rather than settled by rule order.",
+          "description": "How this repository's names become the artifacts a request names.  Only 'github' and extension sources read it.\n\nA request names the 'to' side, and that is the artifact's only identity: in the report, in quarantine rules, and on the target.  A repository a rule names is reachable only through its rules, and its tags no rule admits are hidden, so one release cannot land under two names.  A repository no rule names keeps its own name.\n\nEvery rule is consulted.  A request more than one rule admits is refused as ambiguous rather than settled by rule order; an extension source lists a name several rules feed by merging what each admits.",
           "type": "array",
           "items": {
             "$ref": "#/$defs/NameRule"

@@ -10,6 +10,18 @@
 //!   metadata(id, version) --invoke metadata--> extension --fetch--> host
 //!   download(file)        --> repo::download --> host        (never the extension)
 //! ```
+//!
+//! # A name mapping may choose another name
+//!
+//! A source's `names` rules (see `repo::names`) apply here as they do to
+//! GitHub: the extension is asked for its own name and version, and what
+//! it lists comes back under the mapped side, so `amazon/corretto@8.0.1`
+//! can read `corretto-8` at `8.0.1`. The extension never sees the rules.
+//!
+//! **Several rules may feed one artifact name.** Listing its versions asks
+//! each rule's source name and merges what they admit, so the request
+//! needs no version to tell them apart. A request with a version reads
+//! the one rule admitting it; two admitting it is refused as ambiguous.
 
 use std::sync::Arc;
 
@@ -19,16 +31,22 @@ use serde_json::Value;
 
 use crate::core::ctx::Ctx;
 use crate::core::error::{Error, Result};
+use crate::core::problem::Code;
 use crate::ecosystem::Ecosystem;
 use crate::ext::gear::{Gear, PointKind};
 use crate::ext::{ExtHost, Options};
+use crate::message;
 use crate::model::{
     ArtifactId, Dependency, Digest, DigestAlg, EcosystemId, FileRef, ResolvedArtifact, Version,
 };
 use crate::net::Expectation;
 use crate::version::VersionHandler;
 
-use super::{Downloaded, Source};
+use super::{Downloaded, Lookup, NameMap, Source};
+
+/// What a raw coordinate splits its version off at, and so what a mapped
+/// version may not hold.
+const VERSION_SEPARATOR: char = '@';
 
 const VERSIONS_OP: &str = "versions";
 const METADATA_OP: &str = "metadata";
@@ -43,6 +61,9 @@ pub struct ExtensionSource {
 
     /// The handler the extension's `version-scheme` names, if it named one.
     versions: Option<Arc<dyn VersionHandler>>,
+
+    /// How a request's names become the extension's names.
+    names: NameMap,
 }
 
 #[derive(Deserialize)]
@@ -113,7 +134,79 @@ impl ExtensionSource {
             host,
             ecosystem,
             versions,
+            names: NameMap::default(),
         })
+    }
+
+    /// Read names through `names`.
+    pub fn naming(mut self, names: NameMap) -> Self {
+        self.names = names;
+        self
+    }
+
+    /// The extension's own name and version a request for `id` at
+    /// `version` reads.
+    fn sourced(
+        &self,
+        id: &ArtifactId,
+        version: Option<&str>,
+        ctx: &Ctx,
+    ) -> Result<(ArtifactId, Option<String>)> {
+        let message = match self.names.to_source(id.name(), version) {
+            Lookup::Unmapped => return Ok((id.clone(), version.map(str::to_owned))),
+
+            Lookup::Mapped { name, version } => {
+                return Ok((
+                    ArtifactId::new(id.ecosystem().clone(), None, &name),
+                    version,
+                ));
+            }
+
+            Lookup::Refused(why) => message!(
+                "name-mapping-refused",
+                "{purl} cannot be read: {why}",
+                purl = id.purl(),
+                why = why,
+            ),
+
+            Lookup::Ambiguous(rules) => message!(
+                "name-mapping-ambiguous",
+                "{purl} can come from more than one 'names' rule ({rules}); \
+                 name a version only one of them admits",
+                purl = id.purl(),
+                rules = rules.join("; "),
+            ),
+        };
+
+        let detail = message.render();
+        let problem = ctx.reported(Code::VersionUnresolvable, message);
+
+        Err(Error::Unresolvable {
+            artifact: id.purl(),
+            detail,
+            problem: Box::new(problem),
+        })
+    }
+
+    /// The version the extension's `listed` version of `source` is, as
+    /// artifact `id`; `None` when no request could name it.
+    fn version_of(&self, id: &ArtifactId, source: &str, listed: Version) -> Option<Version> {
+        let text = match self.names.to_artifact(source, listed.text(), id.name()) {
+            Lookup::Unmapped => return Some(listed),
+            Lookup::Mapped { version, .. } => version?,
+            Lookup::Refused(_) | Lookup::Ambiguous(_) => return None,
+        };
+
+        (!text.contains(VERSION_SEPARATOR)).then(|| Version::new(text, listed.release()))
+    }
+
+    /// Every version the extension lists for its own `source`.
+    async fn listed(&self, source: &ArtifactId, ctx: &Ctx) -> Result<Vec<Version>> {
+        let output: VersionsOutput = self
+            .call(VERSIONS_OP, self.input(source), "SourceVersionsOutput", ctx)
+            .await?;
+
+        Ok(output.versions)
     }
 
     /// The input every source op shares.
@@ -197,12 +290,37 @@ impl Source for ExtensionSource {
         }
     }
 
+    /// Under `names`, every rule's source name is asked and the versions
+    /// they admit merged, each text once. Reading a version two rules
+    /// admit is refused as ambiguous by `metadata`.
     async fn versions(&self, id: &ArtifactId, ctx: &Ctx) -> Result<Vec<Version>> {
-        let output: VersionsOutput = self
-            .call(VERSIONS_OP, self.input(id), "SourceVersionsOutput", ctx)
-            .await?;
+        let sources: Vec<ArtifactId> = match self.names.sources_for(id.name()).as_slice() {
+            [] => vec![self.sourced(id, None, ctx)?.0],
+            names => names
+                .iter()
+                .map(|name| ArtifactId::new(id.ecosystem().clone(), None, name))
+                .collect(),
+        };
 
-        Ok(output.versions)
+        if sources.len() == 1 && sources[0] == *id {
+            return self.listed(id, ctx).await;
+        }
+
+        let mut versions: Vec<Version> = Vec::new();
+
+        for source in &sources {
+            for listed in self.listed(source, ctx).await? {
+                let Some(version) = self.version_of(id, source.name(), listed) else {
+                    continue;
+                };
+
+                if !versions.iter().any(|known| known.text() == version.text()) {
+                    versions.push(version);
+                }
+            }
+        }
+
+        Ok(versions)
     }
 
     async fn metadata(
@@ -212,9 +330,13 @@ impl Source for ExtensionSource {
         ctx: &Ctx,
     ) -> Result<ResolvedArtifact> {
         let version = super::version_required(id, version)?;
+        let (source, tag) = self.sourced(id, Some(version.text()), ctx)?;
 
-        let mut input = self.input(id);
-        input.insert("version".into(), version.text().into());
+        let mut input = self.input(&source);
+        input.insert(
+            "version".into(),
+            tag.as_deref().unwrap_or(version.text()).into(),
+        );
 
         let output: MetadataOutput = self
             .call(METADATA_OP, input, "SourceMetadataOutput", ctx)
@@ -300,6 +422,164 @@ mod tests {
         Ctx::for_test(Cause::Requested {
             arg: "nodejs".into(),
         })
+    }
+
+    // -- names ---------------------------------------------------------------
+
+    const CORRETTO_8: (&str, &str) = (
+        r#""name":"corretto-8""#,
+        r#"","dir":"result","output":{"versions":[{"text":"8.1","release":"general"},{"text":"9.9","release":"general"}]}}"#,
+    );
+
+    const CORRETTO_11: (&str, &str) = (
+        r#""name":"corretto-11""#,
+        r#"","dir":"result","output":{"versions":[{"text":"11.2","release":"pre-release"}]}}"#,
+    );
+
+    /// A raw source ordered as Maven versions, as the Corretto one declares.
+    const DESCRIBE_MAVEN_SOURCE: (&str, &str) = (
+        r#""dir":"describe""#,
+        r#"","dir":"describe","output":{"protocol":1,"points":["source"],"ecosystems":[{"id":"raw","purl-type":"raw","osv-name":""}],"version-scheme":"maven"}}"#,
+    );
+
+    /// `corretto-<major>` at `<major>.*` read as `amazon/corretto`.
+    fn named(routes: &[(&str, &str)]) -> Fixture<ExtensionSource> {
+        use crate::config::{NamePattern, NameRule};
+
+        let rule = |major: &str| NameRule {
+            from: NamePattern {
+                name: format!("corretto-{major}"),
+                version: Some(format!("{major}.*")),
+            },
+            to: NamePattern {
+                name: "amazon/corretto".to_owned(),
+                version: Some(format!("{major}.*")),
+            },
+        };
+        let names = NameMap::parse(&[rule("8"), rule("11")]).expect("parses");
+
+        let mut all = vec![DESCRIBE_MAVEN_SOURCE];
+        all.extend_from_slice(routes);
+
+        let gear = launch_wat(&router(&all)).expect("launches");
+
+        Fixture::build(FixtureClient::new(), |host| {
+            ExtensionSource::open(gear, BASE, &options(serde_json::json!({})), host)
+                .expect("opens")
+                .naming(names)
+        })
+    }
+
+    fn corretto() -> ArtifactId {
+        ArtifactId::new(EcosystemId::raw(), None, "amazon/corretto")
+    }
+
+    /// Every rule feeding the name is asked, and only what a rule admits
+    /// comes back, under the mapped name's versions.
+    #[tokio::test]
+    async fn names_versions_merged_across_rules() {
+        let f = named(&[CORRETTO_8, CORRETTO_11]);
+
+        let versions = f
+            .subject
+            .versions(&corretto(), &ctx())
+            .await
+            .expect("listed");
+
+        assert_eq!(
+            versions,
+            vec![
+                Version::new("8.1", Release::General),
+                Version::new("11.2", Release::PreRelease),
+            ]
+        );
+    }
+
+    /// The extension is asked for its own name; the artifact keeps the
+    /// requested one.
+    #[tokio::test]
+    async fn names_metadata_reads_source_name() {
+        let (_, rest) = metadata();
+        let f = named(&[(r#""name":"corretto-11""#, &rest)]);
+        let version = Version::new("11.2", Release::General);
+
+        let artifact = f
+            .subject
+            .metadata(&corretto(), Some(&version), &ctx())
+            .await
+            .expect("resolved");
+
+        assert_eq!(artifact.id, corretto());
+        assert_eq!(artifact.version_text(), Some("11.2"));
+        assert_eq!(artifact.files[0].name, "node.tar.gz");
+    }
+
+    #[tokio::test]
+    async fn names_exact_request_resolves() {
+        let (_, rest) = metadata();
+        let f = named(&[(r#""version":"8.1""#, &rest), CORRETTO_8, CORRETTO_11]);
+        let ctx = ctx();
+        let request = ArtifactRequest {
+            id: corretto(),
+            spec: VersionSpec::Exact("8.1".into()),
+            prov: ctx.prov().clone(),
+        };
+
+        let artifact = f
+            .subject
+            .resolve(&request, Criteria::new(PreRelease::Exclude), &ctx)
+            .await
+            .expect("resolved");
+
+        assert_eq!(artifact.id, corretto());
+        assert_eq!(artifact.version_text(), Some("8.1"));
+    }
+
+    /// The newest of one major is a Maven range over the merged listing.
+    #[tokio::test]
+    async fn names_range_picks_newest_of_one_major() {
+        let (_, rest) = metadata();
+        let eight = (
+            r#""name":"corretto-8""#,
+            r#"","dir":"result","output":{"versions":[{"text":"8.402.07.1","release":"general"},{"text":"8.514.01.1","release":"general"}]}}"#,
+        );
+        let eleven = (
+            r#""name":"corretto-11""#,
+            r#"","dir":"result","output":{"versions":[{"text":"11.0.25.9.1","release":"general"}]}}"#,
+        );
+        let f = named(&[(r#""version":"8.514.01.1""#, &rest), eight, eleven]);
+        let ctx = ctx();
+        let request = ArtifactRequest {
+            id: corretto(),
+            spec: VersionSpec::Range("[8,9)".into()),
+            prov: ctx.prov().clone(),
+        };
+
+        let artifact = f
+            .subject
+            .resolve(&request, Criteria::new(PreRelease::Exclude), &ctx)
+            .await
+            .expect("resolved");
+
+        assert_eq!(artifact.version_text(), Some("8.514.01.1"));
+    }
+
+    /// A mapped source name is reachable only through its rules, and a
+    /// version no rule admits is refused before the extension is asked.
+    #[tokio::test]
+    async fn names_unmapped_side_refused() {
+        let f = named(&[CORRETTO_8]);
+        let source = ArtifactId::new(EcosystemId::raw(), None, "corretto-8");
+
+        assert!(f.subject.versions(&source, &ctx()).await.is_err());
+
+        let version = Version::new("17.1", Release::General);
+        assert!(
+            f.subject
+                .metadata(&corretto(), Some(&version), &ctx())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

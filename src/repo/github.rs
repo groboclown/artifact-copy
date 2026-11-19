@@ -28,8 +28,8 @@
 //!
 //! Named `owner/repo` and versioned by its tag, so `gitleaks/gitleaks@v8.18.0`
 //! is `pkg:raw/gitleaks%2Fgitleaks@v8.18.0`, and only a raw target accepts
-//! it. Under a `name-version-file` target its assets land at
-//! `owner/repo/{tag}/{asset}`.
+//! it. Under a `name-version-file` or `directory` target its assets land
+//! at `owner/repo/{tag}/{asset}`.
 //!
 //! **A tag holding `@` is refused.** A raw coordinate splits its version
 //! off at the last `@`, so such a tag could never be asked for by name.

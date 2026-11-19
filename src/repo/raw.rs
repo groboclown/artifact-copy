@@ -20,6 +20,7 @@
 //! be paying for generality nobody has asked for.
 
 use crate::core::error::{Error, Result};
+use crate::model::{ArtifactId, Version};
 
 /// How a raw repository's paths become coordinates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -38,6 +39,13 @@ pub enum Mapping {
     /// directory has no version to resolve, and inventing one from a path
     /// segment would make `copy` choose between files that are not versions
     /// of each other.
+    ///
+    /// **A versioned artifact written here gets a directory of its own.**
+    /// A GitHub release or an extension source's artifact arrives with a
+    /// version, and dropping it would pile every version into one directory.
+    /// So `tools/cli@1.2.0` is written to `tools/cli/1.2.0/`, which reads
+    /// back as the unversioned artifact `tools/cli/1.2.0`. See
+    /// [`Mapping::stored`].
     #[default]
     Directory,
 
@@ -160,6 +168,83 @@ impl Mapping {
                 format!("{}/{version}/{}", at.name, at.file)
             }
         }
+    }
+
+    /// The name and version an artifact is held under in this layout.
+    ///
+    /// The same artifact, except under [`Mapping::Directory`], which has no
+    /// version to hold: there a versioned artifact is held as the directory
+    /// `name/version`, unversioned. Every raw target asks this before
+    /// placing a file or asking whether one is there, so the two agree.
+    pub fn stored(self, name: &str, version: Option<&str>) -> (String, Option<String>) {
+        let name = name.trim_matches('/');
+
+        match (self, version) {
+            (Mapping::Directory, Some(version)) => (format!("{name}/{version}"), None),
+            _ => (name.to_owned(), version.map(str::to_owned)),
+        }
+    }
+
+    /// [`Mapping::stored`], for an artifact identity and version: what a
+    /// target asks its repository about.
+    pub fn stored_artifact(
+        self,
+        id: &ArtifactId,
+        version: Option<&Version>,
+    ) -> (ArtifactId, Option<Version>) {
+        match self.stored(id.name(), version.map(Version::text)) {
+            (_, Some(_)) => (id.clone(), version.cloned()),
+            (name, None) => (
+                ArtifactId::new(id.ecosystem().clone(), id.namespace(), &name),
+                None,
+            ),
+        }
+    }
+
+    /// Where one file of an artifact is written, or why it cannot be.
+    ///
+    /// Refused rather than written when the path would not read back as the
+    /// artifact [`Mapping::stored`] holds it as: a file name carrying a
+    /// separator, a `name-version-file` artifact with no version, several
+    /// files of an `as-is` artifact on one path. The error is the detail for
+    /// the caller's own message.
+    pub fn place(
+        self,
+        name: &str,
+        version: Option<&str>,
+        file: &str,
+    ) -> std::result::Result<String, String> {
+        if let (Mapping::AsIs, Some(version)) = (self, version) {
+            return Err(format!(
+                "version {version:?} has nowhere to go: the as-is mapping has no versions; \
+                 use 'mapping: directory' or 'mapping: name-version-file'"
+            ));
+        }
+
+        // An empty version would fold to `name/`, which reads back as the
+        // directory itself.
+        if version.is_some_and(|version| version.trim_matches('/').is_empty()) {
+            return Err(format!("file {file:?} has an empty version"));
+        }
+
+        let (name, version) = self.stored(name, version);
+        let at = Coordinate {
+            name,
+            version,
+            file: file.to_owned(),
+        };
+
+        let path = self.path(&at);
+
+        if at.name.is_empty() || at.file.is_empty() || self.read(&path).as_ref() != Some(&at) {
+            return Err(format!(
+                "file {file:?} would be written to {path:?}, which the {} mapping \
+                 does not read back as this artifact",
+                self.as_str()
+            ));
+        }
+
+        Ok(path)
     }
 }
 
@@ -309,6 +394,69 @@ mod tests {
 
         assert_eq!(read(Mapping::NameVersionFile, "/acme/1.0/x.tgz"), bare);
         assert_eq!(read(Mapping::NameVersionFile, "acme/1.0/x.tgz/"), bare);
+    }
+
+    /// A versioned artifact under `directory` gets its own directory, which
+    /// reads back as that directory's unversioned artifact.
+    #[test]
+    fn directory_folds_version_into_directory() {
+        let path = Mapping::Directory
+            .place("amazon/corretto", Some("8.514.01.1"), "jdk.tar.gz")
+            .expect("placed");
+
+        assert_eq!(path, "amazon/corretto/8.514.01.1/jdk.tar.gz");
+        assert_eq!(
+            read(Mapping::Directory, &path),
+            Some((
+                "amazon/corretto/8.514.01.1".to_owned(),
+                None,
+                "jdk.tar.gz".to_owned()
+            ))
+        );
+        assert_eq!(
+            Mapping::Directory.stored("amazon/corretto", Some("8.514.01.1")),
+            ("amazon/corretto/8.514.01.1".to_owned(), None)
+        );
+
+        // Unversioned stays where it always went.
+        assert_eq!(
+            Mapping::Directory.place("tools/cli", None, "cli.tar.gz"),
+            Ok("tools/cli/cli.tar.gz".to_owned())
+        );
+    }
+
+    #[test]
+    fn place_follows_each_mapping() {
+        assert_eq!(
+            Mapping::NameVersionFile.place("tools/cli", Some("1.2.0"), "cli.tar.gz"),
+            Ok("tools/cli/1.2.0/cli.tar.gz".to_owned())
+        );
+
+        // No version to put in the path.
+        assert!(
+            Mapping::NameVersionFile
+                .place("tools/cli", None, "cli.tar.gz")
+                .is_err()
+        );
+
+        // A version as-is cannot hold is named, with the mappings that can.
+        let refused = Mapping::AsIs
+            .place("tools/cli", Some("1.2.0"), "cli.tar.gz")
+            .expect_err("refused");
+        assert!(refused.contains("name-version-file"), "{refused}");
+
+        // A separator in the file name lands somewhere else.
+        assert!(
+            Mapping::Directory
+                .place("tools/cli", Some("1.2.0"), "a/b.txt")
+                .is_err()
+        );
+        assert!(
+            Mapping::Directory
+                .place("tools/cli", Some(""), "b.txt")
+                .is_err()
+        );
+        assert!(Mapping::Directory.place("", None, "b.txt").is_err());
     }
 
     #[test]

@@ -233,7 +233,7 @@ fn check_kinds(config: &Config, probe: Probe, findings: &mut Findings) {
         check_options("source", &label, &source.options, findings);
         check_source_options(&label, source, findings);
         check_version_handler(&label, source, findings);
-        check_names(&label, source, findings);
+        check_names(&label, source, declared.contains(&source.kind), findings);
         check_omit("source", &label, &source.omit, findings);
         check_dependencies(&label, source, findings);
         check_host_path("source", &label, source.host_path.as_deref(), findings);
@@ -906,18 +906,25 @@ fn check_omit(
     }
 }
 
-fn check_names(label: &str, source: &crate::config::Source, findings: &mut Findings) {
+fn check_names(
+    label: &str,
+    source: &crate::config::Source,
+    extension: bool,
+    findings: &mut Findings,
+) {
     if source.names.is_empty() {
         return;
     }
 
     // Refused rather than ignored: a mapping that silently did nothing
     // would copy under the source's own names.
-    if !crate::repo::names_kinds().contains(&source.kind.as_str()) {
+    // An extension source reads them too: the tool maps its names, not the
+    // extension.
+    if !extension && !crate::repo::names_kinds().contains(&source.kind.as_str()) {
         findings.complaints.push(message!(
             "names-unsupported",
-            "source {label} of kind {source_kind} sets names, but only these read \
-             them: {accepts}",
+            "source {label} of kind {source_kind} sets names, but only these and \
+             extension sources read them: {accepts}",
             label = label,
             source_kind = &source.kind,
             accepts = &crate::repo::names_kinds().join(", "),
@@ -2531,6 +2538,27 @@ mod tests {
 
         assert_eq!(complaints.len(), 1, "{complaints:?}");
         assert!(complaints[0].contains("github"), "{complaints:?}");
+    }
+
+    /// The tool maps an extension source's names, so it reads them too.
+    #[test]
+    fn names_on_extension_source_accepted() {
+        let dir = tempfile::tempdir().expect("tempdir");
+
+        let path = write(
+            dir.path(),
+            "c.json",
+            &doc(r#""hosts":{"h":{"url":"https://e.test/"}},
+                   "extensions":{"releases":{"kind":"executable",
+                     "command":"/bin/true","arguments":[]}},
+                   "sources":{"s":{"host":"h","kind":"releases",
+                     "names":[{"from":{"name":"corretto-8","version":"8.*"},
+                               "to":{"name":"amazon/corretto","version":"8.*"}}]}}"#),
+        );
+
+        let findings = run(&[path], Probe::NamesOnly, &ctx()).expect("loads");
+
+        assert!(findings.is_ok(), "{:?}", findings.complaints);
     }
 
     #[test]

@@ -276,7 +276,9 @@ mod tests {
             lower(&mut bare, &Origins::new(), unanchored).expect("lowered");
 
             assert!(
-                bare["sources"]["public"].get("minimum-publish-time").is_none(),
+                bare["sources"]["public"]
+                    .get("minimum-publish-time")
+                    .is_none(),
                 "{kind}: {bare}"
             );
         }

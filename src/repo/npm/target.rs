@@ -298,11 +298,7 @@ impl NpmTarget {
             return Ok(None);
         }
 
-        let url = format!(
-            "{}/-/package/{}/dist-tags",
-            self.base_url,
-            package_path(id)
-        );
+        let url = format!("{}/-/package/{}/dist-tags", self.base_url, package_path(id));
 
         let tags: BTreeMap<String, String> = match crate::ext::fetch_json(
             &*self.host,
