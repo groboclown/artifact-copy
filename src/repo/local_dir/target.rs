@@ -31,7 +31,7 @@ use crate::ext::{ExtHost, Options};
 use crate::model::{ArtifactId, DigestAlg, ResolvedArtifact, Version};
 use crate::net::Req;
 use crate::net::emulate::generic::Digests;
-use crate::repo::{Companions, Coordinate, Delivered, Delivery, Mapping, OverwriteGuard, Target};
+use crate::repo::{Companions, Delivered, Delivery, Mapping, OverwriteGuard, Target};
 
 pub struct LocalDirTarget {
     repository: Repository,
@@ -61,26 +61,32 @@ impl LocalDirTarget {
     /// on one path; and when a segment is empty or a dot, which would
     /// name somewhere else on disk than it reads as.
     fn path_for(&self, id: &ArtifactId, version: Option<&Version>, file: &str) -> Result<String> {
-        let at = Coordinate {
-            name: id.name().trim_matches('/').to_owned(),
-            version: version.map(|version| version.text().to_owned()),
-            file: file.to_owned(),
+        let version = version.map(Version::text);
+        let purl = || match version {
+            Some(version) => id.purl_at(version),
+            None => id.purl(),
         };
 
-        let path = self.mapping().path(&at);
+        let path = self
+            .mapping()
+            .place(id.name(), version, file)
+            .map_err(|detail| Error::BadRequest {
+                ecosystem: "raw",
+                text: purl(),
+                detail,
+            })?;
 
         let dotted = path
             .split('/')
             .any(|segment| segment.is_empty() || segment == "." || segment == "..");
 
-        if at.name.is_empty() || dotted || self.mapping().read(&path).as_ref() != Some(&at) {
+        if dotted {
             return Err(Error::BadRequest {
                 ecosystem: "raw",
-                text: id.purl(),
+                text: purl(),
                 detail: format!(
-                    "file {file:?} would be written to {path:?}, which the {} mapping \
-                     does not read back as this artifact",
-                    self.mapping().as_str()
+                    "file {file:?} would be written to {path:?}, which names somewhere \
+                     else on disk than it reads as"
                 ),
             });
         }
@@ -147,6 +153,10 @@ impl Target for LocalDirTarget {
         if self.mapping() == Mapping::NameVersionFile {
             crate::repo::version_required(id, version)?;
         }
+
+        // Where `place` puts it: under `directory`, a version's own directory.
+        let (id, version) = self.mapping().stored_artifact(id, version);
+        let (id, version) = (&id, version.as_ref());
 
         let name = id.name().trim_matches('/');
         let wanted = version.map(Version::text);

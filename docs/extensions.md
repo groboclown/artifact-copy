@@ -19,6 +19,24 @@ sources:
     options: {}                 # passed to the module as written
 ```
 
+### Renaming artifacts
+
+A source's `names` rules apply to an extension source as they do to a `github` source: a request names the `to` side, and the extension is asked for the `from` side. Each version pattern holds one `*` or none. Several rules may feed one artifact name; listing its versions asks every rule's source name and merges what they admit, and a version two rules admit is refused as ambiguous.
+
+```yaml
+sources:
+  corretto:
+    host: github-api
+    kind: corretto-releases
+    names:
+      - from: { name: corretto-8,  version: "8.*" }
+        to:   { name: amazon/corretto, version: "8.*" }
+      - from: { name: corretto-11, version: "11.*" }
+        to:   { name: amazon/corretto, version: "11.*" }
+```
+
+`amazon/corretto@8.514.01.1` reads `corretto-8` at `8.514.01.1`, and lands at `amazon/corretto/8.514.01.1/` in a raw target mapped `directory` or `name-version-file`. `corretto-8` itself is no longer reachable.
+
 ## What the module sees
 
 The module can't reach the network, files, or the environment. It asks the tool for pages through one import, and the tool applies the host's constraints and credentials. The module never sees a credential.

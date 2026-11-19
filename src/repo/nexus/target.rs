@@ -76,7 +76,7 @@ use crate::ecosystem::Ecosystem;
 use crate::ext::{ExtHost, Options};
 use crate::model::{ArtifactId, DigestAlg, FileRef, ResolvedArtifact, Version};
 use crate::net::{ByteLimit, Expectation, FormPart, Req, encode_unreserved, normalized_base};
-use crate::repo::{Companions, Coordinate, Delivered, Delivery, Mapping, OverwriteGuard, Target};
+use crate::repo::{Companions, Delivered, Delivery, Mapping, OverwriteGuard, Target};
 
 /// The components endpoint, relative to the Nexus base URL.
 const COMPONENTS: &str = "service/rest/v1/components";
@@ -357,25 +357,15 @@ impl NexusRawTarget {
         name: &'a str,
         staged: &'a Path,
     ) -> Result<Placed<'a>> {
-        let at = Coordinate {
-            name: artifact.id.name().trim_matches('/').to_owned(),
-            version: artifact.version.as_ref().map(|v| v.text().to_owned()),
-            file: name.to_owned(),
-        };
-
-        let path = self.mapping.path(&at);
-
-        if at.name.is_empty() || name.is_empty() || self.mapping.read(&path).as_ref() != Some(&at) {
-            return Err(Error::BadRequest {
+        let version = artifact.version.as_ref().map(Version::text);
+        let path = self
+            .mapping
+            .place(artifact.id.name(), version, name)
+            .map_err(|detail| Error::BadRequest {
                 ecosystem: "raw",
                 text: artifact.purl(),
-                detail: format!(
-                    "file {name:?} would be written to {path:?}, which the {} mapping \
-                     does not read back as this artifact",
-                    self.mapping.as_str()
-                ),
-            });
-        }
+                detail,
+            })?;
 
         let (directory, leaf) = match path.rsplit_once('/') {
             Some((directory, leaf)) => (directory.to_owned(), leaf.to_owned()),
@@ -604,6 +594,10 @@ impl Target for NexusRawTarget {
         if self.mapping == Mapping::NameVersionFile {
             crate::repo::version_required(id, version)?;
         }
+
+        // Where `place` puts it: under `directory`, a version's own directory.
+        let (id, version) = self.mapping.stored_artifact(id, version);
+        let (id, version) = (&id, version.as_ref());
 
         let assets = self
             .reader

@@ -123,7 +123,7 @@ sources:
 | `omit` | See [Omit](configuration-server.md#omit). |
 | `cache-retention`, `cache-freshness`, `cache-size` | See [Cache](configuration-server.md#cache). |
 | `version-handler` | `maven`, `pep440`, `semver`, or `tags`. Only for a kind with no ecosystem ordering: `github`, or a raw source with `mapping: name-version-file`. Refused elsewhere. |
-| `names` | `github` only: rules mapping a repository name and tag pattern to an artifact name and version, such as tag `v*` to version `*`. |
+| `names` | `github` and [extension](extensions.md#renaming-artifacts) sources only: rules mapping a source's name and tag pattern to an artifact name and version, such as tag `v*` to version `*`. |
 | `proxy-to` | A proxy's upstreams. See [Proxies](#proxies). |
 | `enumerator` | Accepted and checked, but not yet used. |
 
