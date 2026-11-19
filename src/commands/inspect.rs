@@ -1012,11 +1012,11 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                r#"{{"$schema":"{}","setup":{{"cache-dir":"{}"}},
+                r#"{{"$schema":"{}","setup":{{"cache-dir":{}}},
                     "hosts":{{"registry":{{"url":"{REGISTRY}/"}}}},
                     "sources":{sources}}}"#,
                 crate::cli::config_schema_id(),
-                dir.join("scratch").display(),
+                serde_json::to_string(&dir.join("scratch")).expect("a path"),
             ),
         )
         .expect("written");
@@ -1639,11 +1639,11 @@ mod tests {
             &path,
             format!(
                 r#"{{"$schema":"{}",
-                    "setup":{{"cache-dir":"{}","maximum-in-memory-queued-dependencies":1}},
+                    "setup":{{"cache-dir":{},"maximum-in-memory-queued-dependencies":1}},
                     "hosts":{{"registry":{{"url":"{REGISTRY}/"}}}},
                     "sources":{{"npmjs":{{"kind":"npm","host":"registry"}}}}}}"#,
                 crate::cli::config_schema_id(),
-                dir.path().join("scratch").display(),
+                serde_json::to_string(&dir.path().join("scratch")).expect("a path"),
             ),
         )
         .expect("written");
@@ -1725,11 +1725,11 @@ mod tests {
             &path,
             format!(
                 r#"{{"$schema":"{}",
-                    "setup":{{"cache-dir":"{}","quarantine-policy":"quarantine.yaml"}},
+                    "setup":{{"cache-dir":{},"quarantine-policy":"quarantine.yaml"}},
                     "hosts":{{"registry":{{"url":"{REGISTRY}/"}}}},
                     "sources":{{"npmjs":{{"kind":"npm","host":"registry"}}}}}}"#,
                 crate::cli::config_schema_id(),
-                dir.path().join("scratch").display(),
+                serde_json::to_string(&dir.path().join("scratch")).expect("a path"),
             ),
         )
         .expect("written");
@@ -1883,11 +1883,11 @@ mod tests {
             &path,
             format!(
                 r#"{{"$schema":"{}",
-                    "setup":{{"cache-dir":"{}","license-policy":"license.yaml"}},
+                    "setup":{{"cache-dir":{},"license-policy":"license.yaml"}},
                     "hosts":{{"registry":{{"url":"{REGISTRY}/"}}}},
                     "sources":{{"npmjs":{{"kind":"npm","host":"registry"}}}}}}"#,
                 crate::cli::config_schema_id(),
-                dir.join("scratch").display(),
+                serde_json::to_string(&dir.join("scratch")).expect("a path"),
             ),
         )
         .expect("written");

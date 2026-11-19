@@ -549,12 +549,12 @@ mod tests {
         std::fs::write(
             &path,
             format!(
-                r#"{{"$schema":"{}","setup":{{"cache-dir":"{}"}},
+                r#"{{"$schema":"{}","setup":{{"cache-dir":{}}},
                     "hosts":{{"nexus":{{"url":"{NEXUS}/"}}}},
                     "enumerators":{{"all":{{"kind":"nexus","host":"nexus",
                       "options":{{"repository":"npm-group","ecosystem":"npm"}}}}}}}}"#,
                 crate::cli::config_schema_id(),
-                dir.join("scratch").display(),
+                serde_json::to_string(&dir.join("scratch")).expect("a path"),
             ),
         )
         .expect("written");
