@@ -148,7 +148,6 @@ jobs:
   publish-github:
     name: publish GitHub release
     needs: [collect, check-version]
-    if: inputs.tag != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
