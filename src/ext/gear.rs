@@ -6,7 +6,7 @@
 //!          \--kind names an `extensions`--> launch --> Gear --> point adapter
 //! ```
 //!
-//! A built-in holds an [`ExtHost`](super::ExtHost) and does its own I/O
+//! A built-in holds an [`ExtHost`] and does its own I/O
 //! through it. An extension does none: the gearing launches it, gives it a
 //! scratch directory of its own (usually a temporary directory, possibly one
 //! per thread), stages what it needs there, performs every request it asks
