@@ -511,7 +511,7 @@ pub struct Summary {
     /// nobody dares delete one -- but **only** statements the run actually put
     /// a question to. A statement about an artifact the run never reached is
     /// absent, because nothing was learned about it: see
-    /// [`SecurityPolicy::unmatched`](crate::policy::SecurityPolicy::unmatched)
+    /// SecurityPolicy
     /// for why listing those would be worse than listing nothing.
     ///
     /// So an empty vector does not mean every suppression is live. It means
